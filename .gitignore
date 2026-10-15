@@ -1,0 +1,60 @@
+# ==============================================================================
+# .gitignore - Plataforma ODS 16 (Puente Ciudadano)
+# ==============================================================================
+
+# 1. Variables de entorno y secretos (SEGURIDAD CRÍTICA)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+*.cert
+*.pfx
+
+# Permitir explícitamente el archivo de plantilla
+!.env.example
+
+# 2. Dependencias de paquetes y librerías
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+vendor/
+composer.lock
+
+# 3. Archivos de sistema operativo y editores
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 4. Archivos temporales, respaldos locales y logs
+*.log
+*.tmp
+*.bak
+*.old
+*.zip
+ods16_orientacion/
+ods16_orientacion.zip
+
+# 5. Archivos residuales de proyectos anteriores (Laboratorio previo)
+__pycache__/
+*.py[cod]
+*$py.class
+instance/
+pagina/
+
+# 6. Despliegues y compilación
+.vercel/
+dist/
+build/
+out/

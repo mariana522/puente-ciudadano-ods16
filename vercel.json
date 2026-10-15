@@ -1,0 +1,35 @@
+{
+  "version": 2,
+  "name": "puente-ciudadano-ods16",
+  "cleanUrls": true,
+  "routes": [
+    {
+      "src": "/assets/(.*)",
+      "dest": "/frontend/assets/$1"
+    },
+    {
+      "src": "/styles.css",
+      "dest": "/frontend/styles.css"
+    },
+    {
+      "src": "/app.js",
+      "dest": "/frontend/app.js"
+    },
+    {
+      "src": "/db.js",
+      "dest": "/frontend/db.js"
+    },
+    {
+      "src": "/CitizenJourneyComponents.jsx",
+      "dest": "/frontend/CitizenJourneyComponents.jsx"
+    },
+    {
+      "src": "/",
+      "dest": "/frontend/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/frontend/$1"
+    }
+  ]
+}

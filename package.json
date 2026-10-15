@@ -1,0 +1,21 @@
+{
+  "name": "puente_ciudadano",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node chat_server.js",
+    "chat": "node chat_server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@daily-co/daily-js": "^0.93.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "socket.io": "^4.8.4"
+  }
+}

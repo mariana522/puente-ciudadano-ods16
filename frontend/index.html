@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>ODS 16 - Puente de Orientación Ciudadana | Paz, Justicia e Instituciones Sólidas</title>
+  <meta name="description" content="Plataforma web accesible que actúa como puente de comunicación y orientación entre ciudadanos, profesionales e instituciones públicas dentro del marco del ODS 16.">
+  
+  <!-- Google Fonts: Plus Jakarta Sans & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- Custom Design System Stylesheet -->
+  <link rel="stylesheet" href="styles.css?v=8.0">
+</head>
+<body>
+
+  <!-- Top Disclaimer Notice Bar -->
+  <div class="top-notice-bar" id="topNoticeBar">
+    <span class="badge-od16">ODS 16</span>
+    <span><strong>Plataforma Orientadora Ciudadana:</strong> Funcionamos como puente de información y conexión. No somos un tribunal ni emitimos sentencias.</span>
+  </div>
+
+  <!-- ==========================================================================
+       1. HEADER PÚBLICO (Visible cuando NO hay sesión iniciada)
+       ========================================================================== -->
+  <header class="main-header" id="publicHeader">
+    <div class="container nav-container">
+      <div class="brand-logo" onclick="window.setSession(null)">
+        <div class="brand-logo-icon">
+          <i class="fas fa-balance-scale"></i>
+        </div>
+        <div>
+          <span>ODS 16</span>
+          <div style="font-size: 0.75rem; font-weight: 500; color: var(--accent-turquoise);">Puente Ciudadano</div>
+        </div>
+      </div>
+
+      <nav>
+        <ul class="nav-menu">
+          <li><a href="#heroPublic" class="nav-link active" id="navLinkInicio">Inicio</a></li>
+          <li><a href="javascript:void(0)" class="nav-link" id="navLinkComoFunciona" onclick="window.openHowItWorksModal()">¿Cómo funciona?</a></li>
+          <li><a href="javascript:void(0)" class="nav-link" id="navLinkServicios" onclick="window.openServicesModal()">Servicios</a></li>
+          <li><a href="javascript:void(0)" class="nav-link" id="navLinkPreguntas" onclick="window.openFaqModal()">Preguntas frecuentes</a></li>
+        </ul>
+      </nav>
+
+      <div class="header-actions" id="publicHeaderActions">
+        <button id="btnLogin" class="btn btn-secondary" onclick="window.triggerLoginModal()"><i class="fas fa-user"></i> Iniciar sesión</button>
+        <button id="btnRegister" class="btn btn-primary" onclick="window.triggerRegisterModal()"><i class="fas fa-user-plus"></i> Registrarse</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==========================================================================
+       2. HEADER AUTENTICADO (Visible cuando HAY sesión iniciada: Ciudadano o Profesional)
+       ========================================================================== -->
+  <header class="main-header auth-header" id="authHeader" style="display: none;">
+    <div class="container nav-container">
+      <div class="brand-logo" onclick="window.handleNavInicio()" title="Ir al Inicio">
+        <div class="brand-logo-icon">
+          <i class="fas fa-balance-scale"></i>
+        </div>
+        <div>
+          <span>ODS 16</span>
+          <div style="font-size: 0.75rem; font-weight: 500; color: var(--accent-turquoise);">Puente Ciudadano</div>
+        </div>
+      </div>
+
+      <nav>
+        <ul class="nav-menu">
+          <li><a href="javascript:void(0)" class="nav-link active" id="authNavInicio" onclick="window.handleNavInicio()">Inicio</a></li>
+          <li><a href="javascript:void(0)" class="nav-link" id="authNavComoFunciona" onclick="window.openHowItWorksModal()">¿Cómo funciona?</a></li>
+          <li><a href="javascript:void(0)" class="nav-link" id="authNavServicios" onclick="window.openServicesModal()">Servicios</a></li>
+          <li><a href="javascript:void(0)" class="nav-link" id="authNavPreguntas" onclick="window.openFaqModal()">Preguntas frecuentes</a></li>
+        </ul>
+      </nav>
+
+      <div class="auth-header-right">
+        <!-- Notification Bell -->
+        <button id="btnAuthNotifications" class="auth-icon-btn" title="Notificaciones" onclick="window.openNotificationsModal()">
+          <i class="fas fa-bell"></i>
+          <span class="notification-dot" id="authNotificationDot"></span>
+        </button>
+
+        <!-- Profile Pill -->
+        <div class="auth-user-profile-badge" id="authUserBadge" onclick="window.openProfileModal()" title="Ver Perfil y Opciones">
+          <div class="auth-user-avatar" id="authAvatarTop">M</div>
+          <span class="auth-user-label" id="authNameTop">Perfil</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+
+  <!-- ==========================================================================
+       VISTA 1: PÁGINA PÚBLICA INICIAL (FIGMA PÁGINA 17)
+       Renderizada cuando state.currentUser === null
+       ========================================================================== -->
+  <main id="viewPublicSection" class="view-section active">
+    
+    <!-- Hero Banner Público (Figma Página 17) -->
+    <section class="platform-hero" id="heroPublic">
+      <div class="container hero-grid">
+        <div class="hero-content">
+          <span class="badge-od16" style="margin-bottom: 0.75rem; display: inline-block;">Plataforma de Acompañamiento ODS 16</span>
+          <h1 style="font-size: 2.6rem; color: var(--dark-blue); line-height: 1.2; margin-bottom: 0.85rem;">
+            ¿No sabes a dónde acudir con tu situación?
+          </h1>
+          <p class="hero-subtitle" style="font-size: 1.15rem; margin-bottom: 1.75rem;">
+            Encuentra orientación y conoce las opciones disponibles para tu caso.
+          </p>
+          
+          <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <button class="btn btn-primary btn-lg" onclick="window.scrollToQuestionnaire()">
+              <i class="fas fa-hand-holding-hand"></i> Necesito orientación
+            </button>
+            <button class="btn btn-secondary btn-lg" onclick="window.setSession('professional')">
+              <i class="fas fa-user-tie"></i> Soy profesional
+            </button>
+          </div>
+
+          <div style="margin-top: 2rem; padding-top: 1.25rem; border-top: 1px dashed var(--border-color);">
+            <strong style="color: var(--primary-blue); font-size: 1.1rem; display: block;">Tu situación, nuestra orientación.</strong>
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0.25rem 0 0;">
+              Conoce las opciones disponibles y encuentra el canal adecuado para recibir ayuda.
+            </p>
+          </div>
+        </div>
+
+        <div class="hero-illustration-card">
+          <img src="assets/hero_bridge.jpg" alt="Puente digital de orientación ciudadana">
+        </div>
+      </div>
+    </section>
+
+    <!-- Sección "¿Qué necesitas?" + Cuestionario (Figma Página 17) -->
+    <section id="questionnaireSection" class="questionnaire-section" style="padding: 4rem 0;">
+      <div class="container">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 3rem; align-items: flex-start;">
+          
+          <!-- Columna Izquierda: Los 3 Beneficios Clave (Figma pág 17) -->
+          <div class="public-features-column">
+            <h2 style="font-size: 2.2rem; color: var(--dark-blue); margin-bottom: 0.5rem;">
+              ¿Qué necesitas?
+            </h2>
+            <p style="font-size: 1.05rem; color: var(--text-muted); margin-bottom: 2rem;">
+              Cuéntanos brevemente qué está sucediendo y te ayudaremos a identificar las opciones disponibles.
+            </p>
+
+            <div style="display: flex; flex-direction: column; gap: 1.5rem; margin-bottom: 2.5rem;">
+              <!-- Beneficio 1 -->
+              <div style="display: flex; align-items: flex-start; gap: 1rem;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: var(--soft-blue); color: var(--primary-blue); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0;">
+                  <i class="fas fa-file-shield"></i>
+                </div>
+                <div>
+                  <h4 style="margin: 0 0 0.25rem; color: var(--dark-blue);">Orientación clara y confiable</h4>
+                  <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0;">Rutas directas sin tecnicismos legales innecesarios para saber qué hacer.</p>
+                </div>
+              </div>
+
+              <!-- Beneficio 2 -->
+              <div style="display: flex; align-items: flex-start; gap: 1rem;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: var(--accent-turquoise-light); color: var(--accent-turquoise-hover); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0;">
+                  <i class="fas fa-handshake-angle"></i>
+                </div>
+                <div>
+                  <h4 style="margin: 0 0 0.25rem; color: var(--dark-blue);">Conexión con profesionales</h4>
+                  <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0;">Abogados y conciliadores verificados para revisar tus pruebas en vivo.</p>
+                </div>
+              </div>
+
+              <!-- Beneficio 3 -->
+              <div style="display: flex; align-items: flex-start; gap: 1rem;">
+                <div style="width: 48px; height: 48px; border-radius: 12px; background: #fef3c7; color: #b45309; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; flex-shrink: 0;">
+                  <i class="fas fa-building-columns"></i>
+                </div>
+                <div>
+                  <h4 style="margin: 0 0 0.25rem; color: var(--dark-blue);">Información sobre instituciones confiables</h4>
+                  <p style="font-size: 0.88rem; color: var(--text-muted); margin: 0;">Datos exactos de sede física, horarios y requisitos de la entidad oficial competente.</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Slogans de pie de Figma -->
+            <div style="background: var(--soft-blue); padding: 1.25rem; border-radius: var(--radius-md); border-left: 4px solid var(--accent-turquoise);">
+              <span style="font-size: 0.85rem; font-weight: 700; color: var(--accent-turquoise-hover); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 0.25rem;">Tu Situación Importa</span>
+              <p style="font-style: italic; color: var(--dark-blue); font-weight: 600; margin: 0;">
+                "Juntos por una sociedad más justa"
+              </p>
+            </div>
+          </div>
+
+          <!-- Columna Derecha: Cuestionario Guiado (Figma pág 17) -->
+          <div class="questionnaire-card" id="questionnaire">
+            <div class="wizard-header">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                <h3 style="margin: 0; color: var(--dark-blue);">Responde el cuestionario</h3>
+                <span class="badge-od16">Paso a paso</span>
+              </div>
+              <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">Esto nos permitirá conocer mejor tu situación.</p>
+
+              <!-- Progress Steps -->
+              <div class="wizard-steps-indicator" style="margin-top: 1.25rem;">
+                <div class="w-step-item active" data-wstep="1">
+                  <div class="w-step-circle">1</div>
+                  <span>Área</span>
+                </div>
+                <div class="w-step-line"></div>
+                <div class="w-step-item" data-wstep="2">
+                  <div class="w-step-circle">2</div>
+                  <span>Detalles</span>
+                </div>
+                <div class="w-step-line"></div>
+                <div class="w-step-item" data-wstep="3">
+                  <div class="w-step-circle">3</div>
+                  <span>Canal</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Formulario Wizard -->
+            <form id="formWizardOrientation">
+              <!-- PASO 1 -->
+              <div class="wizard-step-pane active" id="wizardStep1">
+                <label class="form-label" style="font-weight: 700; margin-bottom: 0.75rem;">Selecciona la categoría de tu situación:</label>
+                <div class="category-grid">
+                  <div class="category-card selected" data-category="Problema laboral">
+                    <div class="category-icon"><i class="fas fa-briefcase"></i></div>
+                    <div style="font-weight: 700; font-size: 0.9rem;">Problema laboral</div>
+                    <small style="color: var(--text-muted);">Despidos, liquidación</small>
+                  </div>
+                  <div class="category-card" data-category="Conflicto familiar">
+                    <div class="category-icon"><i class="fas fa-users"></i></div>
+                    <div style="font-weight: 700; font-size: 0.9rem;">Conflicto familiar</div>
+                    <small style="color: var(--text-muted);">Custodia, alimentos</small>
+                  </div>
+                  <div class="category-card" data-category="Problema con institución">
+                    <div class="category-icon"><i class="fas fa-landmark"></i></div>
+                    <div style="font-weight: 700; font-size: 0.9rem;">Problema institucional</div>
+                    <small style="color: var(--text-muted);">Trámites, demoras</small>
+                  </div>
+                  <div class="category-card" data-category="Derechos ciudadanos">
+                    <div class="category-icon"><i class="fas fa-shield-halved"></i></div>
+                    <div style="font-weight: 700; font-size: 0.9rem;">Derechos ciudadanos</div>
+                    <small style="color: var(--text-muted);">Tutelas, garantías</small>
+                  </div>
+                </div>
+
+                <div style="margin-top: 1.25rem;">
+                  <label class="form-label" style="font-size: 0.85rem; font-weight: 700;">Motivo principal específico:</label>
+                  <div id="subcatChipsContainer" class="subcat-chips-group"></div>
+                </div>
+
+                <div style="margin-top: 1.5rem; text-align: right;">
+                  <button type="button" class="btn btn-primary" id="btnNextStep1">Continuar <i class="fas fa-arrow-right"></i></button>
+                </div>
+              </div>
+
+              <!-- PASO 2 -->
+              <div class="wizard-step-pane" id="wizardStep2" style="display: none;">
+                <div class="form-group">
+                  <label class="form-label" style="font-weight: 700;">Describe tu situación:</label>
+                  <textarea id="caseDescription" class="form-control" rows="4" placeholder="Escribe aquí lo que está sucediendo con el mayor detalle posible..." required></textarea>
+                </div>
+
+                <div style="background: var(--soft-blue); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1rem;">
+                  <span style="font-size: 0.85rem; font-weight: 700; color: var(--dark-blue); display: block; margin-bottom: 0.5rem;">¿Cuentas con evidencias?</span>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.85rem;">
+                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                      <input type="checkbox" id="checkHasDocs" checked> Tengo contratos / recibos
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                      <input type="checkbox" id="checkRecent"> Ocurrió recientemente
+                    </label>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; margin-top: 1.5rem;">
+                  <button type="button" class="btn btn-secondary" id="btnPrevStep2"><i class="fas fa-arrow-left"></i> Volver</button>
+                  <button type="button" class="btn btn-primary" id="btnNextStep2">Continuar <i class="fas fa-arrow-right"></i></button>
+                </div>
+              </div>
+
+              <!-- PASO 3 -->
+              <div class="wizard-step-pane" id="wizardStep3" style="display: none;">
+                <label class="form-label" style="font-weight: 700;">¿Necesitas hablar con un profesional?</label>
+                <div class="modality-cards-grid" style="margin-bottom: 1.25rem;">
+                  <div class="modality-card selected" id="modalityVirtual" data-mode="virtual">
+                    <div class="modality-badge">Recomendado</div>
+                    <div class="modality-icon"><i class="fas fa-video"></i></div>
+                    <h5>Sí, con videollamada y chat</h5>
+                    <p>Orientación en vivo con Dra. Elena Gómez.</p>
+                  </div>
+                  <div class="modality-card" id="modalityDirect" data-mode="direct">
+                    <div class="modality-icon" style="background: var(--sky-blue-light); color: var(--primary-blue);"><i class="fas fa-file-contract"></i></div>
+                    <h5>No, solo Hoja de Ruta</h5>
+                    <p>Dirección y checklist oficial directo.</p>
+                  </div>
+                </div>
+
+                <div id="wizardSummaryBox" class="wizard-summary-box" style="margin-bottom: 1.25rem;"></div>
+
+                <div style="display: flex; justify-content: space-between;">
+                  <button type="button" class="btn btn-secondary" id="btnPrevStep3"><i class="fas fa-arrow-left"></i> Volver</button>
+                  <button type="submit" class="btn btn-turquoise" id="btnSubmitWizard">
+                    <i class="fas fa-wand-magic-sparkles"></i> Iniciar Orientación
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Recorrido Narrativo Interactivo 3D (6 Escenas) -->
+    <section id="viewStorySection" class="story-player-wrapper" style="background: var(--soft-blue); padding: 3rem 0;">
+      <div class="container">
+        <div class="story-player-card">
+          
+          <div class="story-header">
+            <div class="story-title-group">
+              <h2><i class="fas fa-play-circle" style="color: var(--accent-turquoise);"></i> Recorrido Interactivo de la Solución</h2>
+              <p style="font-size: 0.9rem; opacity: 0.9; margin-top: 0.25rem;">ODS 16: Paz, Justicia e Instituciones Sólidas (6 Escenas)</p>
+            </div>
+            
+            <div class="story-progress-steps">
+              <div class="step-dot active" data-scene="1">1</div>
+              <div class="step-dot" data-scene="2">2</div>
+              <div class="step-dot" data-scene="3">3</div>
+              <div class="step-dot" data-scene="4">4</div>
+              <div class="step-dot" data-scene="5">5</div>
+              <div class="step-dot" data-scene="6">6</div>
+            </div>
+          </div>
+
+          <div class="story-body">
+            <!-- ESCENA 1: EL PROBLEMA -->
+            <div class="scene-container active" data-scene-id="1">
+              <div class="scene-media" id="scene1Media">
+                <img id="scene1Img" src="assets/problem_scene.jpg" alt="Escena 1: El ciudadano abrumado por trámites e incertidumbre">
+                <div id="scene1MediaOverlay" class="media-badge-overlay">
+                  <i id="overlayIcon" class="fas fa-exclamation-triangle" style="color: #f59e0b; font-size: 1.3rem;"></i>
+                  <div>
+                    <strong id="overlayTitle">Fricción Crítica Detectada</strong>
+                    <div id="overlaySubtitle" style="font-size: 0.82rem; opacity: 0.95;">Ciudadano desorientado ante trámites legales complejos</div>
+                  </div>
+                </div>
+              </div>
+              <div class="scene-content" id="scene1Content">
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <span class="scene-tag"><i class="fas fa-exclamation-circle"></i> Escena 1: El Problema</span>
+                  <span id="simActiveBadge" class="sim-badge-pill">Simulación Dinámica</span>
+                </div>
+                <h3 class="scene-title" id="scene1Title">¿Enfrentas problemas con tus derechos o trámites y no sabes a quién acudir?</h3>
+                <p class="scene-description" id="scene1Desc">
+                  Muchos ciudadanos sufren la falta de información clara, sintiéndose abrumados ante una montaña de papeles y trámites sin saber qué institución oficial es la competente para atender su caso.
+                </p>
+
+                <!-- Interactive Friction Simulator -->
+                <div class="simulator-card-box">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.6rem;">
+                    <span style="font-size: 0.88rem; font-weight: 700; color: var(--dark-blue);"><i class="fas fa-hand-pointer" style="color: var(--accent-turquoise);"></i> Haz clic para simular la dificultad que experimentas:</span>
+                  </div>
+                  <div class="scene-quiz-options">
+                    <button class="quiz-btn active" data-issue="desconocida">
+                      <i class="fas fa-question-circle" style="color: var(--primary-blue);"></i> Institución desconocida
+                    </button>
+                    <button class="quiz-btn" data-issue="burocracia">
+                      <i class="fas fa-file-alt" style="color: var(--status-pending);"></i> Burocracia excesiva
+                    </button>
+                    <button class="quiz-btn" data-issue="costos">
+                      <i class="fas fa-scale-unbalanced" style="color: #e63946;"></i> Falta de asesoría accesible
+                    </button>
+                  </div>
+                  <div id="quizFeedback" class="sim-feedback-box" style="margin-top: 1rem;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ESCENA 2: LA SOLUCIÓN -->
+            <div class="scene-container" data-scene-id="2">
+              <div class="scene-media">
+                <img src="assets/hero_bridge.jpg" alt="Escena 2: Transición a la plataforma web">
+              </div>
+              <div class="scene-content">
+                <span class="scene-tag"><i class="fas fa-lightbulb"></i> Escena 2: La Solución</span>
+                <h3 class="scene-title">"Tu situación, nuestra orientación"</h3>
+                <p class="scene-description">
+                  Una transición fluida lleva al ciudadano a nuestra plataforma web accesible. La página de inicio le pregunta directamente: <strong>"¿Qué necesitas?"</strong> y le ofrece rutas guiadas e inmediatas.
+                </p>
+                <div style="background: var(--soft-blue); padding: 1.25rem; border-radius: var(--radius-md); border: 1px dashed var(--primary-blue);">
+                  <div style="font-weight: 700; margin-bottom: 0.75rem; color: var(--dark-blue);">Opciones principales de orientación:</div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 0.9rem;">
+                    <div><i class="fas fa-briefcase" style="color: var(--accent-turquoise);"></i> Problemas laborales</div>
+                    <div><i class="fas fa-users" style="color: var(--primary-blue);"></i> Conflictos familiares</div>
+                    <div><i class="fas fa-building" style="color: var(--sky-blue);"></i> Trámites con instituciones</div>
+                    <div><i class="fas fa-gavel" style="color: var(--status-pending);"></i> Derechos ciudadanos</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ESCENA 3: EL PROCESO -->
+            <div class="scene-container" data-scene-id="3">
+              <div class="scene-media" style="padding: 2rem; display: flex; flex-direction: column; justify-content: center; gap: 1rem; background: linear-gradient(135deg, var(--soft-blue), #ffffff);">
+                <div style="background: #ffffff; padding: 1.25rem; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--border-color);">
+                  <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 44px; height: 44px; border-radius: 50%; background: var(--accent-turquoise-light); color: var(--accent-turquoise-hover); display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
+                      <i class="fas fa-file-signature"></i>
+                    </div>
+                    <div>
+                      <h5 style="margin: 0;">1. Registrar Caso</h5>
+                      <small style="color: var(--text-muted);">Formulario guiado de orientación</small>
+                    </div>
+                  </div>
+                </div>
+                <div style="text-align: center; color: var(--accent-turquoise); font-size: 1.5rem;">
+                  <i class="fas fa-arrow-down-long"></i>
+                </div>
+                <div style="background: #ffffff; padding: 1.25rem; border-radius: var(--radius-md); box-shadow: var(--shadow-sm); border: 1px solid var(--accent-turquoise);">
+                  <div style="display: flex; align-items: center; gap: 0.75rem;">
+                    <div style="width: 44px; height: 44px; border-radius: 50%; background: var(--primary-blue); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.25rem;">
+                      <i class="fas fa-robot"></i>
+                    </div>
+                    <div>
+                      <h5 style="margin: 0;">2. Emparejamiento Inteligente (AI Matching)</h5>
+                      <small style="color: var(--accent-turquoise-hover);">Conectando con Dra. Elena Gómez (Especialista)</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="scene-content">
+                <span class="scene-tag"><i class="fas fa-cogs"></i> Escena 3: El Proceso</span>
+                <h3 class="scene-title">Formulario ágil y emparejamiento con profesionales</h3>
+                <p class="scene-description">
+                  El ciudadano llena un cuestionario sencillo ("Registrar caso"). El sistema ejecuta un emparejamiento inteligente asociando el tipo de problema con el perfil del profesional verificado más idóneo.
+                </p>
+              </div>
+            </div>
+
+            <!-- ESCENA 4: LA CONEXIÓN -->
+            <div class="scene-container" data-scene-id="4">
+              <div class="video-call-box">
+                <div class="video-call-grid">
+                  <div class="video-stream">
+                    <div id="simUserVideo" class="video-stream-avatar">M</div>
+                    <span class="video-stream-tag"><i class="fas fa-user"></i> Mariana (Ciudadano)</span>
+                  </div>
+                  <div class="video-stream" style="background: #1e293b;">
+                    <div class="video-stream-avatar" style="background: linear-gradient(135deg, var(--accent-turquoise), #004d40);">EG</div>
+                    <span class="video-stream-tag"><i class="fas fa-user-shield"></i> Dra. Elena Gómez (Asesora)</span>
+                  </div>
+                </div>
+                <div class="video-call-controls">
+                  <button id="btnToggleCam" class="call-control-btn" title="Cámara"><i class="fas fa-video"></i></button>
+                  <button id="btnToggleMic" class="call-control-btn" title="Micrófono"><i class="fas fa-microphone"></i></button>
+                  <button class="call-control-btn end-call" title="Finalizar llamada" onclick="alert('Llamada finalizada.')"><i class="fas fa-phone-slash"></i></button>
+                </div>
+              </div>
+              <div class="scene-content">
+                <span class="scene-tag"><i class="fas fa-comments"></i> Escena 4: La Conexión</span>
+                <h3 class="scene-title">"Orientación directa mediante chat y videollamada"</h3>
+                <p class="scene-description">
+                  Pantalla dividida dinámica: El ciudadano interactúa desde su hogar mientras el profesional atiende desde su despacho. Conversan cara a cara o por chat seguro sin desplazamientos innecesarios.
+                </p>
+                <div class="sim-chat-box" id="simChatBox">
+                  <div class="chat-msg citizen">Mariana: Hola Doctora, fui despedida sin justificación y no sé dónde reclamar mi liquidación.</div>
+                  <div class="chat-msg professional">Dra. Elena Gómez: Hola Mariana. Tranquila, revisaremos tu contrato y te diremos exactamente cómo dirigirte a la Inspección del Trabajo.</div>
+                </div>
+                <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                  <input type="text" id="simChatInput" class="form-control" placeholder="Escribe un mensaje..." style="padding: 0.5rem 0.75rem; font-size: 0.85rem;">
+                  <button id="simChatSend" class="btn btn-turquoise" style="padding: 0.5rem 1rem; font-size: 0.85rem;"><i class="fas fa-paper-plane"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ESCENA 5: EL SEGUIMIENTO -->
+            <div class="scene-container" data-scene-id="5">
+              <div class="scene-content">
+                <span class="scene-tag"><i class="fas fa-tasks"></i> Escena 5: El Seguimiento</span>
+                <h3 class="scene-title">Panel de control y derivación a la institución correspondiente</h3>
+                <p class="scene-description">
+                  El dashboard interactivo muestra el estado del caso. Con un clic avanza de <strong>"En curso"</strong> a <strong>"Finalizado"</strong>. El ciudadano siente un gran alivio al conocer los pasos exactos y la institución oficial a la cual dirigirse.
+                </p>
+                <div class="tracking-card">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+                    <span><strong>Caso #CAS-00138:</strong> Conflicto Laboral</span>
+                    <span id="scene5StatusBadge" class="status-badge in-progress"><i class="fas fa-clock"></i> En curso</span>
+                  </div>
+                  <p id="scene5StatusText" style="font-size: 0.95rem; margin-bottom: 1rem;">
+                    <strong>Estado actual:</strong> Revisando documentación con la Dra. Elena Gómez mediante chat y videollamada.
+                  </p>
+                  <button id="btnAdvanceStatus" class="btn btn-primary" style="width: 100%;">
+                    <i class="fas fa-check"></i> Simular Avanzar a "Finalizado"
+                  </button>
+                </div>
+              </div>
+              <div class="scene-media" style="padding: 2rem; background: var(--soft-blue); display: flex; flex-direction: column; justify-content: center; gap: 1rem;">
+                <div style="background: #ffffff; border-radius: var(--radius-md); padding: 1.25rem; border-left: 5px solid var(--accent-turquoise); box-shadow: var(--shadow-sm);">
+                  <h5 style="color: var(--dark-blue); margin-bottom: 0.5rem;"><i class="fas fa-route"></i> Hoja de Ruta Ciudadana</h5>
+                  <ol style="padding-left: 1.25rem; font-size: 0.9rem; color: var(--text-dark);">
+                    <li>Reunir contrato y desprendibles.</li>
+                    <li>Presentarse en: <strong>Inspección del Trabajo - Sede Central</strong>.</li>
+                    <li>Solicitar audiencia de conciliación laboral gratuita.</li>
+                  </ol>
+                </div>
+              </div>
+            </div>
+
+            <!-- ESCENA 6: CIERRE ODS 16 -->
+            <div class="scene-container" data-scene-id="6">
+              <div class="scene-media">
+                <img src="assets/closing_globe.jpg" alt="Escena 6: Globo terráqueo ODS 16 y mazo de justicia">
+              </div>
+              <div class="scene-content">
+                <span class="scene-tag" style="background: var(--sky-blue-light); color: var(--primary-blue);"><i class="fas fa-globe-americas"></i> Escena 6: Cierre</span>
+                <h3 class="scene-title" style="font-size: 2.2rem; color: var(--primary-blue);">"Juntos por una sociedad más justa"</h3>
+                <p class="scene-description" style="font-weight: 600; background: #ffffff; border-left-color: var(--accent-turquoise);">
+                  Una plataforma web que funciona como puente entre ciudadanos, profesionales e instituciones.
+                </p>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                  <button class="btn btn-turquoise" onclick="window.scrollToQuestionnaire()"><i class="fas fa-rocket"></i> Registrar mi caso ahora</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="story-controls-footer">
+            <button id="btnPrevScene" class="btn btn-secondary" disabled><i class="fas fa-chevron-left"></i> Anterior</button>
+            <button id="btnAutoPlay" class="btn btn-outline"><i class="fas fa-play"></i> Auto Reproducir</button>
+            <button id="btnNextScene" class="btn btn-primary">Siguiente Escena <i class="fas fa-chevron-right"></i></button>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Directorio de Instituciones Oficiales -->
+    <section id="directory" class="directory-section">
+      <div class="container">
+        <div class="section-title-center">
+          <h2><i class="fas fa-building-columns"></i> Directorio de Instituciones Oficiales</h2>
+          <p>Nuestra plataforma funciona como un <strong>puente orientador</strong>. Conoce a qué entidad oficial acudir según tu necesidad:</p>
+        </div>
+
+        <div class="institution-grid">
+          <div class="institution-card">
+            <div>
+              <div class="inst-icon"><i class="fas fa-briefcase"></i></div>
+              <h4>Inspección del Trabajo</h4>
+              <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.5rem;">
+                Entidad gubernamental encargada de velar por el cumplimiento de los derechos laborales, salarios y conciliaciones patronales.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="alert('Contacto Inspección de Trabajo: Línea Gratuita Nacional 01 8000 112518')" style="margin-top: 1rem;">
+              <i class="fas fa-info-circle"></i> Ver Información de Contacto
+            </button>
+          </div>
+
+          <div class="institution-card">
+            <div>
+              <div class="inst-icon"><i class="fas fa-home"></i></div>
+              <h4>Comisaría de Familia</h4>
+              <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.5rem;">
+                Entidad especializada en orientar y proteger los derechos de la familia, custodias, alimentos y resolución de conflictos.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="alert('Contacto Comisaría de Familia: Atención 24/7 en sedes municipales.')" style="margin-top: 1rem;">
+              <i class="fas fa-info-circle"></i> Ver Información de Contacto
+            </button>
+          </div>
+
+          <div class="institution-card">
+            <div>
+              <div class="inst-icon"><i class="fas fa-user-shield"></i></div>
+              <h4>Personería Municipal / Defensoría</h4>
+              <p style="font-size: 0.9rem; color: var(--text-muted); margin-top: 0.5rem;">
+                Organismo de control que asesora a los ciudadanos en la guarda y promoción de los derechos humanos y acciones de tutela.
+              </p>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="alert('Contacto Personería: Atiende de Lunes a Viernes de 8:00am a 5:00pm.')" style="margin-top: 1rem;">
+              <i class="fas fa-info-circle"></i> Ver Información de Contacto
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sección Sobre ODS 16 -->
+    <section id="about" class="about-ods16-section">
+      <div class="container">
+        <div class="section-title-center">
+          <span class="badge-od16" style="margin-bottom: 0.6rem; display: inline-block;">Objetivo de Desarrollo Sostenible 16</span>
+          <h2>Paz, Justicia e Instituciones Sólidas</h2>
+          <p>Nuestra plataforma responde directamente a las metas de la Agenda 2030 de la ONU, transformando la orientación ciudadana en una herramienta de inclusión y paz social.</p>
+        </div>
+
+        <div class="ods-pillars-grid">
+          <div class="pillar-card">
+            <div class="pillar-icon"><i class="fas fa-scale-balanced"></i></div>
+            <h4>Acceso Igualitario a la Justicia</h4>
+            <p><strong>Meta 16.3:</strong> Promover el estado de derecho y garantizar que cualquier ciudadano, sin importar su condición socioeconómica, reciba orientación clara sin intermediarios costosos.</p>
+            <div class="pillar-footer-tag"><i class="fas fa-shield-heart"></i> Orientación Gratuita</div>
+          </div>
+          <div class="pillar-card highlight-pillar">
+            <div class="pillar-icon" style="background: var(--primary-blue); color: #fff;"><i class="fas fa-landmark-flag"></i></div>
+            <h4>Instituciones Eficaces y Transparentes</h4>
+            <p><strong>Meta 16.6:</strong> Reducir la brecha burocrática y conectar a las personas directamente con la entidad oficial competente, evitando filas inútiles y pérdida de tiempo.</p>
+            <div class="pillar-footer-tag" style="color: var(--primary-blue);"><i class="fas fa-bridge-water"></i> Conexión Directa</div>
+          </div>
+          <div class="pillar-card">
+            <div class="pillar-icon"><i class="fas fa-handshake-angle"></i></div>
+            <h4>Resolución Pacífica de Conflictos</h4>
+            <p><strong>Meta 16.7:</strong> Fomentar la conciliación y el diálogo temprano en conflictos laborales, familiares y comunitarios antes de que escalen a litigios desgastantes.</p>
+            <div class="pillar-footer-tag"><i class="fas fa-dove"></i> Mediación Temprana</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+
+  <!-- ==========================================================================
+       VISTA 2: PANEL DEL CIUDADANO (FIGMA PÁGINA 18 SUPERIOR)
+       Renderizado condicionalmente cuando state.currentUser?.role === 'citizen'
+       ========================================================================== -->
+  <main id="viewCitizenSection" class="view-section" style="display: none;">
+    <div class="dashboard-layout-container">
+      
+      <!-- MENÚ LATERAL IZQUIERDO DEL CIUDADANO (FIGMA PÁGINA 18) -->
+      <aside class="dashboard-sidebar">
+        <div>
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 1rem; padding-left: 0.75rem;">
+            Menú Ciudadano
+          </div>
+          <ul class="sidebar-nav-list">
+            <li>
+              <a href="#" class="sidebar-item" id="cNavReport" onclick="window.sidebarCitizenAction('report')">
+                <i class="fas fa-file-circle-plus"></i> Reportar situación
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item active" id="cNavCases" onclick="window.sidebarCitizenAction('cases')">
+                <i class="fas fa-folder-open"></i> Mis casos
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="cNavMessages" onclick="window.sidebarCitizenAction('messages')">
+                <i class="fas fa-comments"></i> Mensajes
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="cNavCalls" onclick="window.sidebarCitizenAction('videocalls')">
+                <i class="fas fa-video"></i> Videollamadas
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="cNavNotif" onclick="window.sidebarCitizenAction('notifications')">
+                <i class="fas fa-bell"></i> Notificaciones
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="cNavInst" onclick="window.sidebarCitizenAction('institutions')">
+                <i class="fas fa-building-columns"></i> Instituciones
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="cNavProfile" onclick="window.sidebarCitizenAction('profile')">
+                <i class="fas fa-user"></i> Mi perfil
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item logout-item" onclick="window.handleLogout()">
+                <i class="fas fa-arrow-right-from-bracket"></i> Cerrar Sesión
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="sidebar-footer-quote">
+          "Juntos por una sociedad más justa"
+        </div>
+      </aside>
+
+      <!-- CONTENIDO PRINCIPAL DEL CIUDADANO (FIGMA PÁGINA 18) -->
+      <section class="dashboard-main-content">
+        
+        <!-- Welcome Card: Hola, Mariana -->
+        <div class="dashboard-header-card">
+          <div class="user-profile-info">
+            <div class="user-avatar-circle" id="cUserAvatarLarge">M</div>
+            <div>
+              <h2 style="margin-bottom: 0.25rem; color: var(--dark-blue);" id="cWelcomeName">Hola, Mariana</h2>
+              <p style="color: var(--text-muted); font-size: 1rem; margin: 0;" id="cWelcomeSubtitle">
+                ¿En qué podemos ayudarte hoy? Recuerda que tu situación importa.
+              </p>
+            </div>
+          </div>
+          <button class="btn btn-turquoise" onclick="window.sidebarCitizenAction('report')">
+            <i class="fas fa-plus"></i> Nueva Situación
+          </button>
+        </div>
+
+        <!-- Card: Mis casos -->
+        <div class="tracking-card">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem;">
+            <h3 style="margin: 0; color: var(--dark-blue); font-size: 1.35rem;">
+              <i class="fas fa-folder-open" style="color: var(--primary-blue);"></i> Mis casos
+            </h3>
+            <span class="badge-od16">Expedientes activos</span>
+          </div>
+
+          <div class="table-responsive">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th># casos</th>
+                  <th>Situación</th>
+                  <th>Estado</th>
+                  <th>Fecha</th>
+                  <th style="min-width: 220px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="citizenDashboardTableBody">
+                <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Botones Inferiores Exactos de Figma (Página 18) -->
+          <div class="dashboard-actions-row">
+            <button class="btn btn-secondary" onclick="window.openVirtualRoom('CAS-00138')">
+              <i class="fas fa-video"></i> Programar videollamada
+            </button>
+            <button class="btn btn-secondary" onclick="window.openMessagesModal()">
+              <i class="fas fa-comments"></i> Mis mensajes
+            </button>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+
+  <!-- ==========================================================================
+       VISTA 3: PANEL DEL PROFESIONAL (FIGMA PÁGINAS 18 INFERIOR Y 19)
+       Renderizado condicionalmente cuando state.currentUser?.role === 'professional'
+       ========================================================================== -->
+  <main id="viewProfessionalSection" class="view-section" style="display: none;">
+    <div class="dashboard-layout-container">
+      
+      <!-- MENÚ LATERAL IZQUIERDO DEL PROFESIONAL (FIGMA PÁGINAS 18 Y 19) -->
+      <aside class="dashboard-sidebar">
+        <div>
+          <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 1rem; padding-left: 0.75rem;">
+            Panel Profesional
+          </div>
+          <ul class="sidebar-nav-list">
+            <li>
+              <a href="#" class="sidebar-item" id="pNavReport" onclick="window.sidebarProfAction('report')">
+                <i class="fas fa-chart-line"></i> Reportar situación
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavAgenda" onclick="window.sidebarProfAction('agenda')">
+                <i class="fas fa-calendar-day"></i> Agenda
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item active" id="pNavCases" onclick="window.sidebarProfAction('cases')">
+                <i class="fas fa-list-check"></i> Mis casos pendientes
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavAvail" onclick="window.sidebarProfAction('availability')">
+                <i class="fas fa-clock"></i> Mis Disponibilidades
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavMessages" onclick="window.sidebarProfAction('messages')">
+                <i class="fas fa-comments"></i> Mensajes
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavCalls" onclick="window.sidebarProfAction('videocalls')">
+                <i class="fas fa-video"></i> Videollamadas
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavNotif" onclick="window.sidebarProfAction('notifications')">
+                <i class="fas fa-bell"></i> Notificaciones
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavInst" onclick="window.sidebarProfAction('institutions')">
+                <i class="fas fa-building-columns"></i> Instituciones
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item" id="pNavProfile" onclick="window.sidebarProfAction('profile')">
+                <i class="fas fa-user-doctor"></i> Mi perfil
+              </a>
+            </li>
+            <li>
+              <a href="#" class="sidebar-item logout-item" onclick="window.handleLogout()">
+                <i class="fas fa-arrow-right-from-bracket"></i> Cerrar Sesión
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="sidebar-footer-quote">
+          "Juntos por una sociedad más justa"
+        </div>
+      </aside>
+
+      <!-- CONTENIDO PRINCIPAL DEL PROFESIONAL (FIGMA PÁGINAS 18 Y 19) -->
+      <section class="dashboard-main-content">
+        
+        <!-- Welcome Card Dinámico según Usuario Logueado -->
+        <div class="dashboard-header-card" style="background: linear-gradient(135deg, var(--accent-turquoise-light), #ffffff);">
+          <div class="user-profile-info">
+            <div class="user-avatar-circle" id="profWelcomeAvatar" style="background: linear-gradient(135deg, var(--accent-turquoise), #004d40);">EG</div>
+            <div>
+              <h2 id="profWelcomeName" style="margin-bottom: 0.25rem; color: var(--dark-blue);">Bienvenido, Dra. Elena Gómez</h2>
+              <p id="profWelcomeQuote" style="color: var(--text-dark); font-size: 0.95rem; font-style: italic; margin: 0;">
+                "La orientación también transforma vidas. Tu conocimiento y experiencia generan gran impacto."
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Metrics Row (Figma Página 18) -->
+        <div class="metrics-row" id="profMetricsRow">
+          <div class="metric-card" id="metricCardPending" onclick="window.filterProfByCard('Pendiente')" title="Clic para filtrar Casos Pendientes">
+            <div class="metric-number" style="color: var(--status-pending);">8</div>
+            <div class="metric-label">Casos Pendientes (Asignados recientemente)</div>
+            <span class="metric-badge-action" style="color: #d97706;"><i class="fas fa-filter"></i> Clic para filtrar</span>
+          </div>
+          <div class="metric-card highlight active-in-progress" id="metricCardInProgress" onclick="window.filterProfByCard('En curso')" title="Clic para filtrar Casos en Curso">
+            <div class="metric-number" style="color: var(--status-in-progress);">15</div>
+            <div class="metric-label">Casos en Cursos (En proceso de orientación)</div>
+            <span class="metric-badge-action" style="color: #0284c7;"><i class="fas fa-filter"></i> Clic para filtrar</span>
+          </div>
+          <div class="metric-card" id="metricCardCompleted" onclick="window.filterProfByCard('Finalizado')" title="Clic para ver Casos Atendidos / Finalizados">
+            <div class="metric-number" style="color: var(--status-completed);">42</div>
+            <div class="metric-label">Ciudadanos atendidos (Este mes)</div>
+            <span class="metric-badge-action" style="color: #059669;"><i class="fas fa-chart-line"></i> Clic para filtrar</span>
+          </div>
+        </div>
+
+        <!-- Card: Casos Asignados (Figma Página 18) -->
+        <div class="tracking-card" id="profCasesTableSection">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+              <h3 style="margin: 0; color: var(--dark-blue); font-size: 1.35rem;" id="profTableHeading">
+                <i class="fas fa-list-check" style="color: var(--accent-turquoise);"></i> Casos Asignados
+              </h3>
+              <div class="prof-mode-switcher-container" style="display: inline-flex; background: #e2e8f0; padding: 3px; border-radius: 8px;">
+                <button type="button" class="btn btn-sm prof-view-mode-btn active" data-mode="assigned" style="padding: 0.35rem 0.85rem; font-size: 0.82rem; border-radius: 6px; font-weight: 700; border: none; cursor: pointer;" onclick="window.switchProfViewMode('assigned')">
+                  <i class="fas fa-user-check"></i> Mis Casos
+                </button>
+                <button type="button" class="btn btn-sm prof-view-mode-btn" data-mode="unassigned" style="padding: 0.35rem 0.85rem; font-size: 0.82rem; border-radius: 6px; font-weight: 700; border: none; cursor: pointer;" onclick="window.switchProfViewMode('unassigned')">
+                  <i class="fas fa-inbox"></i> Casos Sin Asignar
+                </button>
+              </div>
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;" id="profTableFilterTabs">
+              <button class="btn btn-secondary btn-sm" id="tabProfAll" onclick="window.filterProfCases('all')">Todos (0)</button>
+              <button class="btn btn-secondary btn-sm" id="tabProfPendientes" onclick="window.filterProfCases('Pendiente')">Pendientes (0)</button>
+              <button class="btn btn-secondary btn-sm active" id="tabProfEnCurso" onclick="window.filterProfCases('En curso')">En curso (0)</button>
+              <button class="btn btn-secondary btn-sm" id="tabProfFinalizados" onclick="window.filterProfCases('Finalizado')">Finalizados (0)</button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th># casos</th>
+                  <th>Ciudadano</th>
+                  <th>Situación</th>
+                  <th>Estado</th>
+                  <th>Fecha</th>
+                  <th style="min-width: 220px;">Acciones</th>
+                </tr>
+              </thead>
+              <tbody id="profDashboardTableBody">
+                <!-- Dynamically populated via JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Card: Mi agenda hoy (Figma Página 19) -->
+        <div class="agenda-card" id="cardAgendaProf">
+          <div class="agenda-header">
+            <h3 style="margin: 0; color: var(--dark-blue); font-size: 1.3rem;">
+              <i class="fas fa-calendar-check" style="color: var(--primary-blue);"></i> Mi agenda hoy
+            </h3>
+            <span class="agenda-date-badge">Martes, 1 de septiembre 2026</span>
+          </div>
+
+          <div class="agenda-events-list">
+            <div class="agenda-event-row">
+              <span class="agenda-event-time">09:00 a.m.</span>
+              <span class="agenda-event-desc">Videollamada caso #00138 (Mariana Sibaja - Despido laboral)</span>
+              <button class="btn btn-turquoise btn-sm" onclick="window.openVirtualRoom('CAS-00138')"><i class="fas fa-video"></i> Conectar</button>
+            </div>
+
+            <div class="agenda-event-row">
+              <span class="agenda-event-time">11:00 a.m.</span>
+              <span class="agenda-event-desc">Revisión de caso #00139 (Carlos Rodríguez - Derecho de petición)</span>
+              <button class="btn btn-secondary btn-sm" onclick="window.openRoadmap('CAS-00139')"><i class="fas fa-file-contract"></i> Revisar</button>
+            </div>
+
+            <div class="agenda-event-row">
+              <span class="agenda-event-time">03:00 p.m.</span>
+              <span class="agenda-event-desc">Videollamada caso #00129 (Daniela Doria - Custodia familiar)</span>
+              <button class="btn btn-turquoise btn-sm" onclick="window.openVirtualRoom('CAS-00129')"><i class="fas fa-video"></i> Conectar</button>
+            </div>
+          </div>
+
+          <button class="btn btn-primary" onclick="window.openVirtualRoom('CAS-00138')">
+            <i class="fas fa-video"></i> Programar video llamada
+          </button>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+
+  <!-- ==========================================================================
+       FOOTER GLOBAL
+       ========================================================================== -->
+  <footer class="disclaimer-footer">
+    <div class="container">
+      <div class="disclaimer-box">
+        <div class="disclaimer-icon"><i class="fas fa-shield-cat"></i></div>
+        <div>
+          <h5 style="color: #ffffff; margin-bottom: 0.35rem;">Aviso de Responsabilidad e Intermediación (ODS 16):</h5>
+          <p style="font-size: 0.85rem; opacity: 0.9; line-height: 1.5;">
+            Esta plataforma web ha sido creada exclusivamente para actuar como un <strong>puente de información, orientación inicial y acompañamiento ciudadano</strong>. La plataforma <strong>NO es una entidad legal, NO emite sentencias, decisiones judiciales ni resoluciones vinculantes</strong>. Las consultas brindadas buscan facilitar que el ciudadano comprenda su situación y se dirija con claridad a la institución pública oficial competente.
+          </p>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <p>© 2026 Universidad Cooperativa de Colombia - ODS 16: Paz, Justicia e Instituciones Sólidas.</p>
+        <p style="margin-top: 0.25rem;">Proyecto desarrollado por Daniela Doria Ochoa & Mariana Sibaja Diaz. Docente: Mauricio Ricardo Padilla.</p>
+      </div>
+    </div>
+  </footer>
+
+
+  <!-- ==========================================================================
+       MODALES DEL SISTEMA
+       ========================================================================== -->
+  <!-- Modal 1: Genérico Reutilizable -->
+  <div id="mainModal" class="modal-overlay">
+    <div class="modal-card">
+      <button id="modalClose" class="modal-close-btn">&times;</button>
+      <h3 id="modalTitle" style="margin-bottom: 1rem; color: var(--dark-blue);">Detalle</h3>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- Modal 2: AI Matching Scan -->
+  <div id="matchingModal" class="modal-overlay">
+    <div class="modal-card matching-modal-card">
+      <div id="matchingContent"></div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Sala de Orientación Virtual (Videollamada & Chat) -->
+  <div id="virtualRoomModal" class="modal-overlay">
+    <div class="modal-card virtual-room-card">
+      <div class="virtual-room-header">
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <div class="live-pulse-dot"></div>
+          <div>
+            <h4 id="vRoomTitle" style="margin: 0; color: #ffffff;">Sala de Orientación Virtual</h4>
+            <small id="vRoomSubtitle" style="color: rgba(255, 255, 255, 0.75);">En consulta con Dra. Elena Gómez (Asesora Verificada)</small>
+          </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.75rem;">
+          <button id="btnEmitRoadmapFromRoom" class="btn btn-turquoise btn-sm">
+            <i class="fas fa-file-signature"></i> Emitir Hoja de Ruta
+          </button>
+          <button id="vRoomClose" class="modal-close-btn" style="position: static; color: #ffffff;">&times;</button>
+        </div>
+      </div>
+
+      <div class="virtual-room-body">
+        <div class="vroom-video-panel">
+          <!-- Daily.co Room Link Bar -->
+          <div class="daily-room-info-bar">
+            <span><i class="fas fa-video" style="color: #38bdf8;"></i> Sala Daily.co: <strong id="dailyRoomLabel">#CAS-00138</strong></span>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <span id="dailyRoomUrlText" class="daily-room-url-link" title="URL de la sala Daily.co">Generando sala...</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCopyDailyUrl" style="padding: 2px 8px; font-size: 0.72rem;" title="Copiar enlace de la videollamada">
+                <i class="fas fa-copy"></i> Copiar
+              </button>
+            </div>
+          </div>
+
+          <!-- Contenedor Principal de la Videollamada Daily.co -->
+          <div id="dailyCallContainer" class="daily-stream-container">
+            <div id="dailyIframeMount" style="width: 100%; height: 100%; min-height: 0;"></div>
+          </div>
+
+          <!-- Controles Limpios de la Videollamada -->
+          <div class="vroom-controls-bar">
+            <button id="vroomCamToggle" class="call-control-btn" title="Apagar/Encender Cámara"><i class="fas fa-video"></i></button>
+            <button id="vroomMicToggle" class="call-control-btn" title="Silenciar/Activar Micrófono"><i class="fas fa-microphone"></i></button>
+            <button id="vroomShareToggle" class="call-control-btn" title="Compartir Pantalla / Documentos"><i class="fas fa-desktop"></i></button>
+            <button id="vroomEndCall" class="call-control-btn end-call" title="Abandonar llamada y regresar al panel">
+              <i class="fas fa-phone-slash"></i> Abandonar llamada
+            </button>
+          </div>
+        </div>
+
+        <div class="vroom-chat-panel">
+          <div class="vroom-chat-header">
+            <span><i class="fas fa-comments" style="color: var(--accent-turquoise);"></i> Chat en Vivo Seguro</span>
+            <span class="badge-encryption"><i class="fas fa-lock"></i> Cifrado ODS 16</span>
+          </div>
+          <div id="vroomChatMessages" class="vroom-chat-messages"></div>
+          <div class="vroom-chat-input-row">
+            <input type="text" id="vroomChatInput" class="form-control" placeholder="Escribe tu consulta a la especialista...">
+            <button id="vroomChatSend" class="btn btn-turquoise"><i class="fas fa-paper-plane"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Hoja de Ruta Oficial Imprimible -->
+  <div id="roadmapModal" class="modal-overlay">
+    <div class="modal-card roadmap-modal-card">
+      <button id="roadmapClose" class="modal-close-btn">&times;</button>
+      <div id="roadmapContent" class="printable-roadmap"></div>
+    </div>
+  </div>
+
+
+
+
+  <!-- Notification Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Base de Datos Local PuenteDB (ODS 16) -->
+  <!-- Daily.co Official WebRTC Video Call SDK -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="assets/daily-iframe.js?v=2.5"></script>
+  <script src="db.js?v=8.0"></script>
+
+  <!-- Main Application Script -->
+  <script src="app.js?v=8.0"></script>
+</body>
+</html>
