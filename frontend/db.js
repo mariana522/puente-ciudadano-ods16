@@ -108,11 +108,11 @@
     },
     {
       id: 'USR-006',
-      name: 'Hernando Ayala',
-      email: 'hernando.ayala@ejemplo.com',
+      name: 'Andrés Morales',
+      email: 'andres.morales@ejemplo.com',
       password: 'password123',
       role: 'citizen',
-      avatar: 'HA',
+      avatar: 'AM',
       phone: '+57 318 444 5566',
       documentId: '1.077.321.654',
       city: 'Montería, Córdoba',
@@ -233,8 +233,8 @@
     },
     {
       id: 'CAS-00142',
-      citizen: 'Hernando Ayala',
-      citizenEmail: 'hernando.ayala@ejemplo.com',
+      citizen: 'Andrés Morales',
+      citizenEmail: 'andres.morales@ejemplo.com',
       type: 'Derechos ciudadanos',
       subType: 'Protección de datos y hábeas data financiero',
       description: 'Reporte negativo en central de riesgo sin previa notificación legal de 20 días.',
@@ -408,8 +408,8 @@
     'CAS-00140': [
       {
         id: 'MSG-401',
-        sender: 'Hernando Ayala',
-        senderEmail: 'hernando.ayala@ejemplo.com',
+        sender: 'Andrés Morales',
+        senderEmail: 'andres.morales@ejemplo.com',
         role: 'citizen',
         text: 'Hola, tengo una consulta sobre afiliación al sistema de salud subsidiado en Montería.',
         time: '03:10 p.m.',
@@ -420,7 +420,7 @@
         sender: 'Dra. Elena Gómez',
         senderEmail: 'elena.gomez@asesores.org',
         role: 'professional',
-        text: 'Buenas tardes Hernando. Debes solicitar la encuesta Sisbén IV en la oficina municipal para la focalización en régimen subsidiado.',
+        text: 'Buenas tardes Andrés. Debes solicitar la encuesta Sisbén IV en la oficina municipal para la focalización en régimen subsidiado.',
         time: '03:20 p.m.',
         date: '2026-09-01'
       }

@@ -1294,7 +1294,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { name: 'Mariana Sibaja', email: 'mariana.sibaja@ejemplo.com', role: 'citizen' },
       { name: 'Carlos Rodríguez', email: 'carlos.rodriguez@ejemplo.com', role: 'citizen' },
       { name: 'Daniela Doria', email: 'daniela.doria@ejemplo.com', role: 'citizen' },
-      { name: 'Hernando Ayala', email: 'hernando.ayala@ejemplo.com', role: 'citizen' }
+      { name: 'Andrés Morales', email: 'andres.morales@ejemplo.com', role: 'citizen' }
     ];
 
     const citizens = allUsers.filter(u => u.role === 'citizen');

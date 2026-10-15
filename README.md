@@ -13,7 +13,6 @@
 
 * **Mariana Sibaja Diaz** 
 * **Daniela Doria Ochoa** 
-* **Hernando Ayala** 
 
 *Proyecto académico de desarrollo Full-Stack - Universidad / Laboratorio Web.*
 

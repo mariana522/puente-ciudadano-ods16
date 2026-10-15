@@ -277,7 +277,7 @@ INSERT INTO `usuarios` (`id`, `codigo`, `nombre`, `correo`, `password_hash`, `ro
 (3, 'USR-003', 'Carlos Rodríguez', 'carlos.rodriguez@ejemplo.com', 'password123', 1, '+57 312 901 2345', 'CR', 'Cereté, Córdoba'),
 (4, 'USR-004', 'Dr. Mauricio Padilla', 'mauricio.padilla@asesores.org', 'password123', 2, '+57 301 555 4321', 'MP', 'Montería, Córdoba'),
 (5, 'USR-005', 'Daniela Doria', 'daniela.doria@ejemplo.com', 'password123', 1, '+57 314 789 6543', 'DD', 'Montería, Córdoba'),
-(6, 'USR-006', 'Hernando Ayala', 'hernando.ayala@ejemplo.com', 'password123', 1, '+57 311 223 3445', 'HA', 'Planeta Rica, Córdoba')
+(6, 'USR-006', 'Andrés Morales', 'andres.morales@ejemplo.com', 'password123', 1, '+57 311 223 3445', 'AM', 'Planeta Rica, Córdoba')
 ON DUPLICATE KEY UPDATE `nombre` = VALUES(`nombre`);
 
 -- 5. Perfiles Ciudadanos (1:1)

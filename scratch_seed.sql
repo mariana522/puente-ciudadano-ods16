@@ -60,7 +60,7 @@ INSERT IGNORE INTO `casos` (
   '["Fórmula médica", "Negativa de la EPS", "Fallo de tutela"]', 'Fallo favorable obtenido. Medicamentos entregados.'
 ),
 (
-  'CAS-00142', 'Hernando Ayala', 'hernando.ayala@ejemplo.com', 'Derechos ciudadanos',
+  'CAS-00142', 'Andrés Morales', 'andres.morales@ejemplo.com', 'Derechos ciudadanos',
   'Protección de datos y hábeas data financiero', 'Reporte negativo en central de riesgo sin previa notificación de ley.',
   'En curso', 'Daniela Doria', '2026-09-23', 'Superintendencia de Industria y Comercio',
   'Carrera 13 # 27-00, Sede Central', '01 8000 910165', 'Lunes a Viernes 8:00 am - 4:30 pm',
