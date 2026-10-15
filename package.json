@@ -2,11 +2,12 @@
   "name": "puente_ciudadano",
   "version": "1.0.0",
   "description": "",
-  "main": "app.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node chat_server.js",
-    "chat": "node chat_server.js"
+    "start": "node server.js",
+    "chat": "node chat_server.js",
+    "server": "node server.js"
   },
   "keywords": [],
   "author": "",
