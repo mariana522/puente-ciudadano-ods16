@@ -1283,15 +1283,29 @@ document.addEventListener('DOMContentLoaded', () => {
   window.updateSystemRealtimeDates = () => {
     try {
       const now = new Date();
-      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-      let formatted = now.toLocaleDateString('es-ES', options);
-      if (formatted) {
-        formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+      const fullOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      let fullFormatted = now.toLocaleDateString('es-ES', fullOptions);
+      if (fullFormatted) {
+        fullFormatted = fullFormatted.charAt(0).toUpperCase() + fullFormatted.slice(1);
       } else {
-        formatted = now.toDateString();
+        fullFormatted = now.toDateString();
       }
-      document.querySelectorAll('.agenda-date-badge, #agendaCurrentDateBadge, #currentSystemDateBadge, .top-realtime-date').forEach(el => {
-        el.textContent = formatted;
+
+      const compactOptions = { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' };
+      let compactFormatted = now.toLocaleDateString('es-ES', compactOptions);
+      if (compactFormatted) {
+        compactFormatted = compactFormatted.replace(/\./g, '').trim();
+        compactFormatted = compactFormatted.charAt(0).toUpperCase() + compactFormatted.slice(1);
+      } else {
+        compactFormatted = fullFormatted;
+      }
+
+      document.querySelectorAll('.agenda-date-badge, #agendaCurrentDateBadge, #currentSystemDateBadge').forEach(el => {
+        el.textContent = fullFormatted;
+      });
+
+      document.querySelectorAll('.top-realtime-date').forEach(el => {
+        el.textContent = compactFormatted;
       });
     } catch (e) {
       console.warn('[Fecha] Error formateando fecha actual:', e);

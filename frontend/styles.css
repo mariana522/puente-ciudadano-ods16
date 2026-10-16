@@ -184,14 +184,23 @@ a:hover {
 .nav-menu {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1.25rem;
   list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-menu li {
+  white-space: nowrap;
 }
 
 .nav-link {
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   color: var(--text-dark);
+  white-space: nowrap;
+  display: inline-block;
+  line-height: 1;
 }
 
 .nav-link:hover {
@@ -2041,50 +2050,78 @@ a:hover {
 .auth-header-right {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.65rem;
+  flex-shrink: 0;
+}
+
+.auth-header-date {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--dark-blue);
+  background: #ffffff;
+  padding: 0 0.85rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .auth-icon-btn {
-  background: transparent;
-  border: none;
-  font-size: 1.25rem;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  font-size: 1rem;
   color: var(--dark-blue);
   cursor: pointer;
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .auth-icon-btn:hover {
   background: var(--soft-blue);
   color: var(--primary-blue);
+  border-color: var(--sky-blue-light);
 }
 
 .notification-dot {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 7px;
+  right: 7px;
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: #ef4444;
+  border: 1.5px solid #ffffff;
 }
 
 .auth-user-profile-badge {
-  display: flex;
+  height: 38px;
+  display: inline-flex;
   align-items: center;
-  gap: 0.6rem;
+  gap: 0.5rem;
   cursor: pointer;
-  padding: 0.35rem 0.85rem;
+  padding: 0 0.85rem 0 0.35rem;
   border-radius: var(--radius-pill);
   background: var(--soft-blue);
   border: 1px solid var(--sky-blue-light);
   transition: all 0.2s;
+  box-sizing: border-box;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .auth-user-profile-badge:hover {
@@ -2093,22 +2130,52 @@ a:hover {
 }
 
 .auth-user-avatar {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--primary-blue), var(--accent-turquoise));
   color: #fff;
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .auth-user-label {
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   font-weight: 700;
   color: var(--dark-blue);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.auth-logout-btn {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.95rem;
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  border: 1.5px solid #fee2e2;
+  color: #ef4444;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.05);
+  transition: all 0.2s ease-in-out;
+  white-space: nowrap;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.auth-logout-btn:hover {
+  background: #fef2f2;
+  border-color: #ef4444;
+  color: #dc2626;
+  transform: translateY(-1px);
 }
 
 /* 2-Column Dashboard Container */
