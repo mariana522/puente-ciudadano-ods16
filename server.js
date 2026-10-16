@@ -572,6 +572,136 @@ function generateCaseRoomToken(cleanCaseId) {
 // Parámetros completos de Jitsi para deshabilitar vestíbulo (lobby), contraseñas y moderador requerido
 const JITSI_CONFIG_HASH = '#config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.enableLobby=false&config.enableLobbyChat=false&config.lobby.autoKnock=false&config.requireDisplayName=false&config.disableLobbyPassword=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.disableDeepLinking=true&interfaceConfig.LOBBY_SECTION_ENABLED=false&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false';
 
+
+// ==============================================================================
+// GESTIÓN PERSISTENTE DE AGENDA / CITAS VIRTUALES (ODS 16)
+// ==============================================================================
+const AGENDA_FILE = path.join(DB_DIR, 'agenda_store.json');
+
+function loadAgendaStore() {
+  try {
+    if (fs.existsSync(AGENDA_FILE)) {
+      const raw = fs.readFileSync(AGENDA_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error('[Store] Error leyendo agenda_store.json:', err.message);
+  }
+  const todayStr = new Date().toISOString().split('T')[0];
+  return [
+    {
+      id: 'EVT-001',
+      profEmail: 'elena.gomez@asesores.org',
+      profName: 'Dra. Elena Gómez',
+      citizenName: 'Mariana Sibaja',
+      citizenEmail: 'mariana.sibaja@ejemplo.com',
+      caseId: 'CAS-00138',
+      type: 'videocall',
+      time: '09:00 a.m.',
+      date: todayStr,
+      topic: 'Videollamada caso #00138 (Mariana Sibaja - Despido laboral)'
+    },
+    {
+      id: 'EVT-002',
+      profEmail: 'elena.gomez@asesores.org',
+      profName: 'Dra. Elena Gómez',
+      citizenName: 'Carlos Rodríguez',
+      citizenEmail: 'carlos.rodriguez@ejemplo.com',
+      caseId: 'CAS-00139',
+      type: 'review',
+      time: '11:00 a.m.',
+      date: todayStr,
+      topic: 'Revisión de caso #00139 (Carlos Rodríguez - Derecho de petición)'
+    },
+    {
+      id: 'EVT-003',
+      profEmail: 'elena.gomez@asesores.org',
+      profName: 'Dra. Elena Gómez',
+      citizenName: 'Daniela Doria',
+      citizenEmail: 'daniela.doria@ejemplo.com',
+      caseId: 'CAS-00129',
+      type: 'videocall',
+      time: '03:00 p.m.',
+      date: todayStr,
+      topic: 'Videollamada caso #00129 (Daniela Doria - Custodia familiar)'
+    }
+  ];
+}
+
+function saveAgendaStore(store) {
+  try {
+    fs.writeFileSync(AGENDA_FILE, JSON.stringify(store, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[Store] Error guardando agenda_store.json:', err.message);
+  }
+}
+
+function handleAgendaRequest(req, res, parsedUrl) {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
+  if (req.method === 'GET') {
+    const profEmail = (parsedUrl.query.profEmail || '').toLowerCase().trim();
+    const citizenEmail = (parsedUrl.query.citizenEmail || '').toLowerCase().trim();
+    let events = loadAgendaStore();
+
+    if (profEmail) {
+      events = events.filter(e => (e.profEmail || '').toLowerCase().trim() === profEmail);
+    }
+    if (citizenEmail) {
+      events = events.filter(e => (e.citizenEmail || '').toLowerCase().trim() === citizenEmail);
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      success: true,
+      data: events,
+      count: events.length
+    }));
+    return;
+  }
+
+  if (req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      let data = {};
+      try { if (body) data = JSON.parse(body); } catch (e) {}
+
+      const events = loadAgendaStore();
+      const newEvt = {
+        id: data.id || ('EVT-' + Date.now()),
+        caseId: data.caseId || 'CAS-00138',
+        profEmail: data.profEmail || 'elena.gomez@asesores.org',
+        profName: data.profName || 'Dra. Elena Gómez',
+        citizenName: data.citizenName || 'Ciudadano',
+        citizenEmail: data.citizenEmail || '',
+        date: data.date || new Date().toISOString().split('T')[0],
+        time: data.time || '10:00 a.m.',
+        topic: data.topic || 'Videollamada de Orientación ODS 16',
+        type: data.type || 'videocall',
+        createdAt: new Date().toISOString()
+      };
+
+      events.unshift(newEvt);
+      saveAgendaStore(events);
+
+      io.emit('new_appointment', newEvt);
+      console.log('[Servidor Agenda] Nueva cita agendada:', newEvt.topic, 'para', newEvt.date, newEvt.time);
+
+      res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        message: 'Cita programada exitosamente.',
+        data: newEvt
+      }));
+    });
+    return;
+  }
+
+  res.writeHead(405, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+}
+
 // Manejo de salas de videollamada públicas y gratuitas con Jitsi Meet
 function handleDailyRoomRequest(req, res, parsedUrl) {
   let body = '';
@@ -770,6 +900,17 @@ const server = http.createServer((req, res) => {
       timestamp: new Date().toISOString(),
       roomsCount: io.sockets.adapter.rooms.size
     }));
+    return;
+  }
+
+  // 2.2 API de Agenda y Citas REST
+  if (
+    pathname === '/api/agenda' ||
+    pathname === '/api/citas' ||
+    pathname === '/backend/agenda.php' ||
+    pathname === '/api/agenda.php'
+  ) {
+    handleAgendaRequest(req, res, parsedUrl);
     return;
   }
 

@@ -456,6 +456,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderConditionalViews();
+  if (typeof window.updateSystemRealtimeDates === "function") window.updateSystemRealtimeDates();
+  setInterval(window.updateSystemRealtimeDates, 60000);
   };
 
   window.handleLogout = () => {
@@ -1255,9 +1257,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
   
   // ==========================================================================
+  
+  // ==========================================================================
+  // FECHA ACTUAL DEL SISTEMA EN TIEMPO REAL (Formateada en español)
+  // ==========================================================================
+  window.updateSystemRealtimeDates = () => {
+    try {
+      const now = new Date();
+      const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+      let formatted = now.toLocaleDateString('es-ES', options);
+      if (formatted) {
+        formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+      } else {
+        formatted = now.toDateString();
+      }
+      document.querySelectorAll('.agenda-date-badge, #agendaCurrentDateBadge, #currentSystemDateBadge, .top-realtime-date').forEach(el => {
+        el.textContent = formatted;
+      });
+    } catch (e) {
+      console.warn('[Fecha] Error formateando fecha actual:', e);
+    }
+  };
+
   // RENDERIZAR AGENDA DEL PROFESIONAL ("Mi agenda hoy")
   // ==========================================================================
   window.renderProfessionalAgenda = () => {
+    if (typeof window.updateSystemRealtimeDates === 'function') {
+      window.updateSystemRealtimeDates();
+    }
     const list = document.getElementById('agendaEventsList');
     if (!list) return;
 
@@ -1306,44 +1333,95 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // ==========================================================================
-  // MODAL: PROGRAMAR VIDEOLLAMADA (PERMITE ELEGIR CON QUÉ USUARIO/CASO PROGRAMAR)
+  // MODAL: PROGRAMAR VIDEOLLAMADA (CARGA DINÁMICA DE CASOS Y CIUDADANOS REALES DE BD)
   // ==========================================================================
-  window.openScheduleCallModal = (preselectedCaseId = null) => {
+  window.openScheduleCallModal = async (preselectedCaseId = null) => {
     const user = state.currentUser || { name: 'Dra. Elena Gómez', role: 'professional', email: 'elena.gomez@asesores.org' };
     const isProf = user.role === 'professional';
 
-    const allUsers = window.PuenteDB?.users.getAll() || [
-      { name: 'Mariana Sibaja', email: 'mariana.sibaja@ejemplo.com', role: 'citizen' },
-      { name: 'Carlos Rodríguez', email: 'carlos.rodriguez@ejemplo.com', role: 'citizen' },
-      { name: 'Daniela Doria', email: 'daniela.doria@ejemplo.com', role: 'citizen' },
-      { name: 'Andrés Morales', email: 'andres.morales@ejemplo.com', role: 'citizen' }
-    ];
+    // 1. Obtener los casos reales y sincronizados más recientes de la base de datos
+    if (window.PuenteDB?.syncCases) {
+      try { await window.PuenteDB.syncCases(); } catch (e) {}
+    }
+    const allCases = (window.PuenteDB?.cases ? window.PuenteDB.cases.getAll() : state.cases) || [];
 
-    const citizens = allUsers.filter(u => u.role === 'citizen');
-    const professionals = allUsers.filter(u => u.role === 'professional');
-    const allCases = state.cases || [];
+    // Fecha actual del sistema en tiempo real para el input
+    const todayStrIso = new Date().toISOString().split('T')[0];
+
+    // Hora sugerida inteligente (la hora actual más 1 hora redondeada)
+    const curHour = new Date().getHours() + 1;
+    const timeSuggestion = (curHour < 20 && curHour >= 8 ? String(curHour).padStart(2, '0') : '09') + ':00';
 
     if (isProf) {
-      let userOptionsHtml = '';
-      citizens.forEach(c => {
-        const userCases = allCases.filter(k => 
-          (k.citizenEmail && k.citizenEmail.toLowerCase() === c.email.toLowerCase()) ||
-          (k.citizen && k.citizen.toLowerCase() === c.name.toLowerCase())
-        );
-        const caseSummary = userCases.length > 0 ? ` [${userCases.length} caso(s): ${userCases.map(x => '#' + x.id).join(', ')}]` : '';
-        userOptionsHtml += `<option value="${c.email}" data-name="${c.name}">${c.name} — ${c.email}${caseSummary}</option>`;
+      // 2. Extraer TODOS los ciudadanos reales únicos que tienen casos en la Base de Datos
+      const citizenMap = new Map();
+
+      // De los casos registrados
+      allCases.forEach(c => {
+        const name = (c.citizen || '').trim();
+        if (!name) return;
+        const email = (c.citizenEmail || '').trim().toLowerCase();
+        const key = email || name.toLowerCase();
+
+        if (!citizenMap.has(key)) {
+          citizenMap.set(key, {
+            name: name,
+            email: email || (name.toLowerCase().replace(/[^a-z0-9]/g, '.') + '@ciudadano.org'),
+            cases: []
+          });
+        }
+        citizenMap.get(key).cases.push(c);
       });
 
-      openModal('Programar Nueva Videollamada de Orientación', `
+      // De los usuarios registrados en la BD con rol ciudadano
+      const regUsers = (window.PuenteDB?.users ? window.PuenteDB.users.getAll() : []) || [];
+      regUsers.filter(u => u.role === 'citizen').forEach(u => {
+        const key = (u.email || u.name).toLowerCase().trim();
+        if (!citizenMap.has(key)) {
+          citizenMap.set(key, {
+            name: u.name,
+            email: u.email,
+            cases: allCases.filter(c => 
+              (c.citizenEmail && c.citizenEmail.toLowerCase().trim() === u.email.toLowerCase().trim()) ||
+              (c.citizen && c.citizen.toLowerCase().trim() === u.name.toLowerCase().trim())
+            )
+          });
+        }
+      });
+
+      // Si no hay ciudadanos aún, agregar los de prueba por defecto
+      if (citizenMap.size === 0) {
+        citizenMap.set('mariana.sibaja@ejemplo.com', {
+          name: 'Mariana Sibaja',
+          email: 'mariana.sibaja@ejemplo.com',
+          cases: allCases.filter(c => c.id === 'CAS-00138')
+        });
+      }
+
+      // Si viene un caso preseleccionado, identificar su ciudadano para marcarlo
+      const targetPreCase = preselectedCaseId ? allCases.find(c => c.id === preselectedCaseId) : null;
+
+      let userOptionsHtml = '';
+      for (const [key, cit] of citizenMap.entries()) {
+        const cCount = cit.cases.length;
+        const cList = cCount > 0 ? cit.cases.map(x => '#' + x.id).join(', ') : 'Sin expedientes';
+        const isSelected = targetPreCase && (
+          (targetPreCase.citizenEmail && targetPreCase.citizenEmail.toLowerCase().trim() === cit.email.toLowerCase().trim()) ||
+          (targetPreCase.citizen && targetPreCase.citizen.toLowerCase().trim() === cit.name.toLowerCase().trim())
+        );
+        userOptionsHtml += `<option value="${cit.email}" data-name="${cit.name}" ${isSelected ? 'selected' : ''}>${cit.name} — (${cCount} caso(s): ${cList})</option>`;
+      }
+
+      openModal('Programar Nueva Cita / Videollamada', `
         <div style="background: var(--soft-blue); border-left: 4px solid var(--accent-turquoise); padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.88rem; color: var(--dark-blue); line-height: 1.5;">
           <i class="fas fa-calendar-check" style="color: var(--accent-turquoise);"></i> 
-          <strong>Agenda Profesional ODS 16:</strong> Elige con qué usuario o ciudadano deseas programar la videollamada, selecciona el caso y define la fecha y horario de atención.
+          <strong>Agenda Profesional ODS 16:</strong> Selecciona el ciudadano y su expediente real consultado desde la base de datos para programar la atención.
         </div>
 
         <form onsubmit="event.preventDefault(); window.submitScheduleCall();" style="display: flex; flex-direction: column; gap: 0.95rem;">
           <div class="form-group" style="margin: 0;">
             <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
-              <i class="fas fa-user" style="color: var(--accent-turquoise);"></i> 1. Elige con qué Usuario / Ciudadano programar:
+              <i class="fas fa-users" style="color: var(--accent-turquoise);"></i> 1. Ciudadano(a) Registrado(a) en el Sistema:
             </label>
             <select id="scheduleUserSelect" class="form-control" style="font-weight: 700; color: var(--dark-blue);" onchange="window.updateScheduleCaseOptions()">
               ${userOptionsHtml}
@@ -1352,26 +1430,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="form-group" style="margin: 0;">
             <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
-              <i class="fas fa-folder-open" style="color: var(--accent-turquoise);"></i> 2. Caso o Expediente Asociado:
+              <i class="fas fa-folder-open" style="color: var(--accent-turquoise);"></i> 2. Caso o Expediente Real a Tratar:
             </label>
-            <select id="scheduleCaseSelect" class="form-control">
-              <!-- Cargado dinámicamente según el ciudadano seleccionado -->
+            <select id="scheduleCaseSelect" class="form-control" onchange="window.handleScheduleCaseChange()">
+              <!-- Poblado dinámicamente con los casos reales del ciudadano y la BD -->
             </select>
           </div>
 
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
             <div class="form-group" style="margin: 0;">
               <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
-                <i class="fas fa-calendar-day" style="color: var(--accent-turquoise);"></i> 3. Fecha de la Videollamada:
+                <i class="fas fa-calendar-day" style="color: var(--accent-turquoise);"></i> 3. Fecha de la Cita:
               </label>
-              <input type="date" id="scheduleCallDate" class="form-control" value="2026-09-01" required>
+              <input type="date" id="scheduleCallDate" class="form-control" value="${todayStrIso}" min="${todayStrIso}" required>
             </div>
 
             <div class="form-group" style="margin: 0;">
               <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
-                <i class="fas fa-clock" style="color: var(--accent-turquoise);"></i> 4. Hora de la Sesión:
+                <i class="fas fa-clock" style="color: var(--accent-turquoise);"></i> 4. Hora de la Cita:
               </label>
-              <input type="time" id="scheduleCallTime" class="form-control" value="10:00" required>
+              <input type="time" id="scheduleCallTime" class="form-control" value="${timeSuggestion}" required>
             </div>
           </div>
 
@@ -1389,7 +1467,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="form-group" style="margin: 0;">
             <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
-              <i class="fas fa-bullseye" style="color: var(--accent-turquoise);"></i> 5. Motivo de la Videollamada:
+              <i class="fas fa-bullseye" style="color: var(--accent-turquoise);"></i> 5. Motivo de la Consulta:
             </label>
             <select id="scheduleCallTopic" class="form-control">
               <option value="Orientación jurídica sobre hechos y derechos">Orientación jurídica sobre hechos y derechos</option>
@@ -1403,17 +1481,17 @@ document.addEventListener('DOMContentLoaded', () => {
             <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
               <i class="fas fa-note-sticky" style="color: var(--accent-turquoise);"></i> Notas o Instrucciones previas:
             </label>
-            <input type="text" id="scheduleCallNotes" class="form-control" placeholder="Ej: Conectarse con documento de identidad y contrato">
+            <input type="text" id="scheduleCallNotes" class="form-control" placeholder="Ej: Conectarse con documento de identidad y soportes del caso">
           </div>
 
           <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 0.65rem 0.85rem; border-radius: 8px; font-size: 0.8rem; color: #166534; display: flex; align-items: center; gap: 0.5rem;">
-            <i class="fas fa-shield-halved" style="color: #10b981; font-size: 1.1rem;"></i>
-            <span>Se generará una sala de videollamada cifrada y protegida por ODS 16 (Daily.co Prebuilt).</span>
+            <i class="fas fa-video" style="color: #10b981; font-size: 1.1rem;"></i>
+            <span>Se integrará automáticamente con el enlace directo y libre de Jitsi Meet (#CAS-[ID]).</span>
           </div>
 
           <div style="display: flex; gap: 0.75rem; margin-top: 0.5rem;">
             <button type="submit" class="btn btn-turquoise" id="btnSubmitSchedule" style="flex: 2; padding: 0.75rem; font-weight: 700; font-size: 0.95rem;">
-              <i class="fas fa-calendar-plus"></i> Agendar y Programar Videollamada
+              <i class="fas fa-calendar-plus"></i> Agendar y Programar Cita
             </button>
             <button type="button" class="btn btn-secondary" style="flex: 1; padding: 0.75rem; font-weight: 700;" onclick="closeModal()">
               <i class="fas fa-xmark"></i> Cancelar
@@ -1427,19 +1505,36 @@ document.addEventListener('DOMContentLoaded', () => {
       }, 50);
 
     } else {
+      // Rama del Ciudadano: Elige profesional y su propio caso real
+      const professionals = (window.PuenteDB?.users ? window.PuenteDB.users.getAll() : []).filter(u => u.role === 'professional');
+      if (professionals.length === 0) {
+        professionals.push({
+          name: 'Dra. Elena Gómez',
+          email: 'elena.gomez@asesores.org',
+          specialty: 'Derecho Laboral y Seguridad Social'
+        });
+      }
+
       let profOptionsHtml = '';
       professionals.forEach(p => {
         profOptionsHtml += `<option value="${p.email}" data-name="${p.name}">${p.name} — ${p.specialty || 'Asesoría Jurídica'}</option>`;
       });
 
-      const citEmail = (user.email || '').toLowerCase();
-      const myCases = allCases.filter(c => (c.citizenEmail && c.citizenEmail.toLowerCase() === citEmail) || (c.citizen && c.citizen.toLowerCase() === user.name.toLowerCase()));
-      let myCasesHtml = myCases.map(c => `<option value="${c.id}">${c.id} - ${c.type}</option>`).join('');
-      if (!myCasesHtml) myCasesHtml = `<option value="CAS-00138">CAS-00138 - Despido laboral</option>`;
+      const citEmail = (user.email || '').toLowerCase().trim();
+      const citName = (user.name || '').toLowerCase().trim();
+      const myCases = allCases.filter(c => 
+        (c.citizenEmail && c.citizenEmail.toLowerCase().trim() === citEmail) ||
+        (c.citizen && c.citizen.toLowerCase().trim() === citName)
+      );
 
-      openModal('Solicitar / Programar Videollamada', `
+      let myCasesHtml = myCases.map(c => `<option value="${c.id}" ${preselectedCaseId === c.id ? 'selected' : ''}>#${c.id} - ${c.type} (${c.status})</option>`).join('');
+      if (!myCasesHtml) {
+        myCasesHtml = allCases.slice(0, 5).map(c => `<option value="${c.id}">#${c.id} - ${c.type} (${c.citizen})</option>`).join('');
+      }
+
+      openModal('Solicitar / Programar Cita Virtual', `
         <div style="background: var(--soft-blue); border-left: 4px solid var(--accent-turquoise); padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.25rem; font-size: 0.88rem; color: var(--dark-blue);">
-          Agenda una sesión virtual de orientación gratuita con uno de nuestros asesores jurídicos del ODS 16.
+          Agenda una sesión virtual de orientación gratuita con uno de nuestros asesores jurídicos verificados.
         </div>
 
         <form onsubmit="event.preventDefault(); window.submitScheduleCall();" style="display: flex; flex-direction: column; gap: 0.95rem;">
@@ -1454,7 +1549,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           <div class="form-group" style="margin: 0;">
             <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
-              <i class="fas fa-folder-open" style="color: var(--accent-turquoise);"></i> Tu caso a tratar:
+              <i class="fas fa-folder-open" style="color: var(--accent-turquoise);"></i> Tu caso o expediente:
             </label>
             <select id="scheduleCaseSelect" class="form-control">
               ${myCasesHtml}
@@ -1466,14 +1561,14 @@ document.addEventListener('DOMContentLoaded', () => {
               <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
                 <i class="fas fa-calendar-day" style="color: var(--accent-turquoise);"></i> Fecha deseada:
               </label>
-              <input type="date" id="scheduleCallDate" class="form-control" value="2026-09-01" required>
+              <input type="date" id="scheduleCallDate" class="form-control" value="${todayStrIso}" min="${todayStrIso}" required>
             </div>
 
             <div class="form-group" style="margin: 0;">
               <label style="font-weight: 700; font-size: 0.85rem; color: var(--dark-blue); margin-bottom: 0.35rem; display: block;">
                 <i class="fas fa-clock" style="color: var(--accent-turquoise);"></i> Hora:
               </label>
-              <input type="time" id="scheduleCallTime" class="form-control" value="09:00" required>
+              <input type="time" id="scheduleCallTime" class="form-control" value="${timeSuggestion}" required>
             </div>
           </div>
 
@@ -1501,7 +1596,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // Actualizar casos dinámicamente según el usuario seleccionado en el dropdown
+  // Cargar dinámicamente los casos reales del ciudadano seleccionado
   window.updateScheduleCaseOptions = (preselectedCaseId = null) => {
     const userSel = document.getElementById('scheduleUserSelect');
     const caseSel = document.getElementById('scheduleCaseSelect');
@@ -1511,23 +1606,67 @@ document.addEventListener('DOMContentLoaded', () => {
     const selOption = userSel.options[userSel.selectedIndex];
     const name = selOption ? (selOption.dataset.name || '').toLowerCase().trim() : '';
 
-    const allCases = state.cases || [];
+    const allCases = (window.PuenteDB?.cases ? window.PuenteDB.cases.getAll() : state.cases) || [];
+
+    // Casos pertenecientes al ciudadano seleccionado
     const userCases = allCases.filter(c => 
       (c.citizenEmail && c.citizenEmail.toLowerCase().trim() === email) ||
       (c.citizen && c.citizen.toLowerCase().trim() === name)
     );
 
-    if (userCases.length === 0) {
-      caseSel.innerHTML = `
-        <option value="CAS-00138">CAS-00138 - Sesión General de Orientación</option>
-        <option value="CAS-NEW">Nuevo Expediente / Consulta Inicial</option>
-      `;
-    } else {
-      caseSel.innerHTML = userCases.map(c => `
-        <option value="${c.id}" ${preselectedCaseId === c.id ? 'selected' : ''}>
-          #${c.id} - ${c.type || c.subType || 'Orientación'} (${c.status})
+    // Otros casos registrados en el sistema
+    const otherCases = allCases.filter(c => !userCases.some(u => u.id === c.id));
+
+    let html = '';
+
+    if (userCases.length > 0) {
+      html += `<optgroup label="Expedientes de este Ciudadano (${userCases.length})">`;
+      html += userCases.map(c => `
+        <option value="${c.id}" data-cit-name="${c.citizen}" data-cit-email="${c.citizenEmail || ''}" ${preselectedCaseId === c.id ? 'selected' : ''}>
+          #${c.id} - ${c.type || c.subType || 'Caso'} (${c.status})
         </option>
-      `).join('') + `<option value="CAS-GEN">Consulta General adicional</option>`;
+      `).join('');
+      html += `</optgroup>`;
+    }
+
+    if (otherCases.length > 0) {
+      html += `<optgroup label="Otros Expedientes Registrados en BD">`;
+      html += otherCases.map(c => `
+        <option value="${c.id}" data-cit-name="${c.citizen}" data-cit-email="${c.citizenEmail || ''}" ${preselectedCaseId === c.id ? 'selected' : ''}>
+          #${c.id} - ${c.type || c.subType || 'Caso'} (${c.citizen})
+        </option>
+      `).join('');
+      html += `</optgroup>`;
+    }
+
+    html += `<option value="CAS-NUEVO">+ Nueva Orientación / Consulta General</option>`;
+
+    caseSel.innerHTML = html;
+  };
+
+  // Sincronizar selección de ciudadano cuando se elija un caso de otro usuario
+  window.handleScheduleCaseChange = () => {
+    const userSel = document.getElementById('scheduleUserSelect');
+    const caseSel = document.getElementById('scheduleCaseSelect');
+    if (!userSel || !caseSel) return;
+
+    const selOption = caseSel.options[caseSel.selectedIndex];
+    if (!selOption) return;
+
+    const citEmail = (selOption.dataset.citEmail || '').toLowerCase().trim();
+    const citName = (selOption.dataset.citName || '').toLowerCase().trim();
+
+    if (citEmail || citName) {
+      for (let i = 0; i < userSel.options.length; i++) {
+        const opt = userSel.options[i];
+        if (
+          (citEmail && opt.value.toLowerCase().trim() === citEmail) ||
+          (citName && (opt.dataset.name || '').toLowerCase().trim() === citName)
+        ) {
+          userSel.selectedIndex = i;
+          break;
+        }
+      }
     }
   };
 

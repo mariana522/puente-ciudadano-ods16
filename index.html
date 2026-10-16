@@ -114,6 +114,12 @@
       </nav>
 
       <div class="auth-header-right">
+        <!-- Indicador de Fecha Actual en Tiempo Real (Esquina Superior Derecha) -->
+        <div class="auth-header-date" id="topHeaderDate" style="display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; font-weight: 600; color: var(--dark-blue); background: rgba(255, 255, 255, 0.95); padding: 0.35rem 0.85rem; border-radius: 9999px; border: 1px solid var(--border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.06);" title="Fecha actual del sistema">
+          <i class="fas fa-calendar-day" style="color: var(--accent-turquoise);"></i>
+          <span class="top-realtime-date">Hoy</span>
+        </div>
+
         <!-- Notification Bell -->
         <button id="btnAuthNotifications" class="auth-icon-btn" title="Notificaciones" onclick="window.openNotificationsModal()">
           <i class="fas fa-bell"></i>
@@ -950,7 +956,7 @@
             <h3 style="margin: 0; color: var(--dark-blue); font-size: 1.3rem;">
               <i class="fas fa-calendar-check" style="color: var(--primary-blue);"></i> Mi agenda hoy
             </h3>
-            <span class="agenda-date-badge">Martes, 1 de septiembre 2026</span>
+            <span class="agenda-date-badge" id="agendaCurrentDateBadge">Hoy</span>
           </div>
 
           <div class="agenda-events-list" id="agendaEventsList">

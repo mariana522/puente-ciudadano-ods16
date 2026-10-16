@@ -295,6 +295,7 @@
   }
 
     // Semilla de agenda de videollamadas y citas
+  const todayStrIso = new Date().toISOString().split('T')[0];
   const SEED_AGENDA = [
     {
       id: 'EVT-001',
@@ -305,7 +306,7 @@
       caseId: 'CAS-00138',
       type: 'videocall',
       time: '09:00 a.m.',
-      date: '2026-09-01',
+      date: todayStrIso,
       topic: 'Videollamada caso #00138 (Mariana Sibaja - Despido laboral)'
     },
     {
@@ -317,7 +318,7 @@
       caseId: 'CAS-00139',
       type: 'review',
       time: '11:00 a.m.',
-      date: '2026-09-01',
+      date: todayStrIso,
       topic: 'Revisión de caso #00139 (Carlos Rodríguez - Derecho de petición)'
     },
     {
@@ -329,7 +330,7 @@
       caseId: 'CAS-00129',
       type: 'videocall',
       time: '03:00 p.m.',
-      date: '2026-09-01',
+      date: todayStrIso,
       topic: 'Videollamada caso #00129 (Daniela Doria - Custodia familiar)'
     }
   ];
@@ -1035,6 +1036,22 @@ const PuenteDB = {
     // 5. GESTIÓN DE AGENDA Y CITAS DE VIDEOLLAMADA
     // =========================================================================
     agenda: {
+      async syncWithServer() {
+        try {
+          const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+            ? window.PUENTE_CONFIG.getApiUrl('api/agenda')
+            : '/api/agenda';
+          const res = await fetch(endpoint + '?_t=' + Date.now(), { cache: 'no-store' });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.success && Array.isArray(json.data)) {
+              saveToStorage(STORAGE_KEYS.AGENDA, json.data);
+              return json.data;
+            }
+          }
+        } catch (e) {}
+        return this.getAll();
+      },
       getAll() {
         return loadFromStorage(STORAGE_KEYS.AGENDA, SEED_AGENDA);
       },
@@ -1042,6 +1059,19 @@ const PuenteDB = {
         const items = this.getAll();
         items.unshift(item);
         saveToStorage(STORAGE_KEYS.AGENDA, items);
+
+        // Guardar en backend si está disponible
+        try {
+          const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+            ? window.PUENTE_CONFIG.getApiUrl('api/agenda')
+            : '/api/agenda';
+          fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(item)
+          }).catch(() => {});
+        } catch (e) {}
+
         return item;
       },
       getByProf(profEmail) {
