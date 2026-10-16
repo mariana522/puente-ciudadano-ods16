@@ -432,14 +432,6 @@ export const ProfessionalDashboardView = ({ user, onLogout }) => {
             </li>
             <li>
               <button
-                onClick={() => setActiveTab('availability')}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                <i className="fas fa-clock text-slate-500"></i> Mis Disponibilidades
-              </button>
-            </li>
-            <li>
-              <button
                 onClick={() => setActiveTab('messages')}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >

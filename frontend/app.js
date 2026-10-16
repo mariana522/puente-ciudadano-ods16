@@ -464,13 +464,17 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast(`Sesión iniciada como Profesional (${user.name}).`, 'success');
     } else {
       state.currentUser = null;
-      window.PuenteDB?.session.clear();
-      showToast('Sesión cerrada. Regresando a la vista pública inicial.', 'info');
+      if (window.PuenteDB && window.PuenteDB.session) {
+        window.PuenteDB.session.clear();
+      }
+      try {
+        localStorage.removeItem('puente_db_session_v2');
+      } catch (e) {}
+      showToast('Sesión cerrada correctamente. Puedes iniciar sesión o registrarte.', 'info');
     }
 
     renderConditionalViews();
-  if (typeof window.updateSystemRealtimeDates === "function") window.updateSystemRealtimeDates();
-  setInterval(window.updateSystemRealtimeDates, 60000);
+    if (typeof window.updateSystemRealtimeDates === "function") window.updateSystemRealtimeDates();
   };
 
   window.handleLogout = () => {
@@ -544,24 +548,6 @@ document.addEventListener('DOMContentLoaded', () => {
         agenda.style.boxShadow = '0 0 0 4px rgba(0, 168, 150, 0.4)';
         setTimeout(() => agenda.style.boxShadow = '', 1500);
       }
-    } else if (action === 'availability') {
-      document.getElementById('pNavAvail')?.classList.add('active');
-      openModal('Mis Disponibilidades de Orientación', `
-        <p style="color: var(--text-muted); font-size: 0.95rem;">Horarios activos en los que los ciudadanos pueden agendar videollamadas contigo:</p>
-        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
-          <div style="background: var(--soft-blue); padding: 0.75rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <span><strong>Lunes a Jueves:</strong> 08:00 a.m. - 12:00 m</span>
-            <span class="badge-od16">Activo</span>
-          </div>
-          <div style="background: var(--soft-blue); padding: 0.75rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <span><strong>Viernes:</strong> 02:00 p.m. - 05:00 p.m.</span>
-            <span class="badge-od16">Activo</span>
-          </div>
-        </div>
-        <button class="btn btn-turquoise" style="width: 100%; margin-top: 1.25rem;" onclick="document.getElementById('mainModal').classList.remove('active'); showToast('Disponibilidad actualizada.', 'success')">
-          <i class="fas fa-plus"></i> Añadir Nueva Franja Horaria
-        </button>
-      `);
     } else if (action === 'messages') {
       window.openMessenger();
     } else if (action === 'videocalls') {
@@ -1123,11 +1109,16 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       </div>
 
-      <!-- BOTONES DE NAVEGACIÓN Y CUENTA -->
+      <!-- ACCIONES DE SESIÓN Y AUTENTICACIÓN SEGURA -->
       <div style="display: flex; flex-direction: column; gap: 0.65rem;">
-        <button class="btn btn-outline" style="width: 100%; border-color: var(--accent-turquoise); color: var(--accent-turquoise); font-weight: 700; padding: 0.75rem;" onclick="window.openSwitchUserModal()">
-          <i class="fas fa-users-gear"></i> Cambiar Usuario / Probar otra cuenta
-        </button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-primary" style="flex: 1; padding: 0.75rem; font-weight: 700; font-size: 0.9rem;" onclick="closeModal(); window.triggerLoginModal();">
+            <i class="fas fa-arrow-right-to-bracket"></i> Iniciar Sesión
+          </button>
+          <button class="btn btn-outline" style="flex: 1; border-color: var(--accent-turquoise); color: var(--accent-turquoise); font-weight: 700; padding: 0.75rem; font-size: 0.9rem;" onclick="closeModal(); window.triggerRegisterModal();">
+            <i class="fas fa-user-plus"></i> Registrarse
+          </button>
+        </div>
 
         <button class="btn btn-outline" style="width: 100%; border-color: #ef4444; color: #ef4444; font-weight: 700; padding: 0.75rem;" onclick="closeModal(); window.handleLogout();">
           <i class="fas fa-arrow-right-from-bracket"></i> Cerrar Sesión
@@ -1240,90 +1231,6 @@ document.addEventListener('DOMContentLoaded', () => {
         submitBtn.innerHTML = '<i class="fas fa-floppy-disk"></i> Guardar Cambios';
       }
     }
-  };
-
-
-  window.openSwitchUserModal = () => {
-    const allUsers = (window.PuenteDB?.users.getAll() || [
-      { name: 'Dra. Elena Gómez', email: 'elena.gomez@asesores.org', role: 'professional', specialty: 'Derecho Laboral' },
-      { name: 'Dr. Mauricio Padilla', email: 'mauricio.padilla@asesores.org', role: 'professional', specialty: 'Derecho de Familia' },
-      { name: 'Daniela Doria', email: 'daniela@gmail', role: 'professional', specialty: 'Derecho Administrativo' },
-      { name: 'Mariana Sibaja', email: 'mariana.sibaja@ejemplo.com', role: 'citizen' },
-      { name: 'Carlos Rodríguez', email: 'carlos.rodriguez@ejemplo.com', role: 'citizen' },
-      { name: 'Daniela Doria', email: 'daniela.doria@ejemplo.com', role: 'citizen' }
-    ]);
-
-    const profs = allUsers.filter(u => u.role === 'professional');
-    const citizens = allUsers.filter(u => u.role === 'citizen');
-
-    openModal('Selector de Cuentas y Perfiles Independientes', `
-      <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.25rem;">
-        Selecciona cualquier usuario para entrar a su sesión individual con sus propios casos asignados y perfil independiente:
-      </p>
-
-      <h4 style="color: var(--dark-blue); font-size: 1rem; margin-bottom: 0.75rem; border-bottom: 2px solid var(--accent-turquoise); padding-bottom: 0.35rem;">
-        <i class="fas fa-user-doctor" style="color: var(--accent-turquoise);"></i> Profesionales y Asesores Jurídicos
-      </h4>
-      <div style="display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: 1.5rem;">
-        ${profs.map(p => `
-          <div style="display: flex; align-items: center; justify-content: space-between; background: var(--soft-blue); padding: 0.75rem 1rem; border-radius: 8px; border-left: 4px solid var(--accent-turquoise);">
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <div style="width: 38px; height: 38px; border-radius: 50%; background: var(--accent-turquoise); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
-                ${p.avatar || p.name.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <strong style="color: var(--dark-blue); font-size: 0.95rem; display: block;">${p.name}</strong>
-                <small style="color: var(--text-dark);">${p.specialty || 'Asesoría Jurídica'} | <span style="color: var(--text-muted);">${p.email}</span></small>
-              </div>
-            </div>
-            <button class="btn btn-sm btn-turquoise" onclick="closeModal(); window.switchAccount('${p.email}');">
-              <i class="fas fa-right-to-bracket"></i> Entrar
-            </button>
-          </div>
-        `).join('')}
-      </div>
-
-      <h4 style="color: var(--dark-blue); font-size: 1rem; margin-bottom: 0.75rem; border-bottom: 2px solid var(--primary-blue); padding-bottom: 0.35rem;">
-        <i class="fas fa-users" style="color: var(--primary-blue);"></i> Ciudadanos Solicitantes
-      </h4>
-      <div style="display: flex; flex-direction: column; gap: 0.65rem; margin-bottom: 1.25rem;">
-        ${citizens.map(c => `
-          <div style="display: flex; align-items: center; justify-content: space-between; background: var(--soft-blue); padding: 0.75rem 1rem; border-radius: 8px; border-left: 4px solid var(--primary-blue);">
-            <div style="display: flex; align-items: center; gap: 0.75rem;">
-              <div style="width: 38px; height: 38px; border-radius: 50%; background: var(--primary-blue); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: 0.95rem;">
-                ${c.avatar || c.name.substring(0, 2).toUpperCase()}
-              </div>
-              <div>
-                <strong style="color: var(--dark-blue); font-size: 0.95rem; display: block;">${c.name}</strong>
-                <small style="color: var(--text-muted);">${c.email} | ${c.city || 'Montería, Córdoba'}</small>
-              </div>
-            </div>
-            <button class="btn btn-sm btn-secondary" onclick="closeModal(); window.switchAccount('${c.email}');">
-              <i class="fas fa-right-to-bracket"></i> Entrar
-            </button>
-          </div>
-        `).join('')}
-      </div>
-
-      <button class="btn btn-secondary" style="width: 100%;" onclick="closeModal(); window.openProfileModal();">
-        <i class="fas fa-arrow-left"></i> Volver a mi Perfil
-      </button>
-    `);
-  };
-
-  window.switchAccount = (email) => {
-    const user = window.PuenteDB?.users.findByEmail(email);
-    if (!user) {
-      showToast(`No se encontró el usuario con correo ${email}`, 'warning');
-      return;
-    }
-    state.currentUser = user;
-    if (window.PuenteDB) {
-      window.PuenteDB.session.set(user);
-      state.cases = window.PuenteDB.cases.getAll();
-    }
-    renderConditionalViews();
-    showToast(`Sesión cambiada a ${user.name} (${user.role === 'professional' ? 'Profesional' : 'Ciudadano'}).`, 'success');
   };
 
   window.switchProfViewMode = (mode) => {
@@ -2698,11 +2605,19 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   // 7. AUTENTICACIÓN REAL (INICIAR SESIÓN Y REGISTRO)
   // ==========================================================================
-  window.triggerLoginModal = (defaultRole = 'citizen') => {
-    const roleLabel = defaultRole === 'professional' ? 'Profesional / Asesor' : 'Ciudadano';
-    const roleBadge = defaultRole === 'professional'
-      ? '<div style="background: var(--soft-blue); border-left: 4px solid var(--primary-blue); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-user-tie"></i> Acceso para Profesionales y Asesores Jurídicos</div>'
-      : '<div style="background: var(--soft-blue); border-left: 4px solid var(--accent-turquoise); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-user"></i> Acceso para Ciudadanos y Solicitantes</div>';
+  window.triggerLoginModal = (defaultRole = null) => {
+    let roleBadge = '';
+    let btnText = 'Iniciar Sesión';
+    if (defaultRole === 'professional') {
+      roleBadge = '<div style="background: var(--soft-blue); border-left: 4px solid var(--primary-blue); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-user-tie"></i> Acceso para Profesionales y Asesores Jurídicos</div>';
+      btnText = 'Iniciar Sesión como Profesional';
+    } else if (defaultRole === 'citizen') {
+      roleBadge = '<div style="background: var(--soft-blue); border-left: 4px solid var(--accent-turquoise); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-user"></i> Acceso para Ciudadanos y Solicitantes</div>';
+      btnText = 'Iniciar Sesión como Ciudadano';
+    } else {
+      roleBadge = '<div style="background: var(--soft-blue); border-left: 4px solid var(--accent-turquoise); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-shield-halved" style="color: var(--accent-turquoise);"></i> Ingreso Seguro a Puente Ciudadano (ODS 16)</div>';
+      btnText = 'Iniciar Sesión';
+    }
 
     openModal('Iniciar Sesión - Puente Ciudadano', `
       ${roleBadge}
@@ -2716,7 +2631,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <input type="password" id="loginPasswordInput" class="form-control" placeholder="••••••••" required autocomplete="current-password">
         </div>
         <button type="submit" class="btn btn-primary" id="btnSubmitLogin" style="width: 100%; padding: 0.75rem; font-size: 0.95rem; font-weight: 700;">
-          <i class="fas fa-arrow-right-to-bracket"></i> Iniciar Sesión como ${roleLabel}
+          <i class="fas fa-arrow-right-to-bracket"></i> ${btnText}
         </button>
       </form>
 

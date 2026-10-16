@@ -131,6 +131,11 @@
           <div class="auth-user-avatar" id="authAvatarTop">M</div>
           <span class="auth-user-label" id="authNameTop">Perfil</span>
         </div>
+
+        <!-- Botón Salir / Cerrar Sesión -->
+        <button id="btnAuthLogout" class="btn btn-sm btn-outline" style="border-color: #ef4444; color: #ef4444; font-weight: 700; padding: 0.35rem 0.85rem; border-radius: 9999px; display: inline-flex; align-items: center; gap: 0.35rem; cursor: pointer; margin-left: 0.35rem;" onclick="window.handleLogout()" title="Cerrar sesión e ir a Iniciar sesión / Registro">
+          <i class="fas fa-arrow-right-from-bracket"></i> Salir
+        </button>
       </div>
     </div>
   </header>
@@ -821,11 +826,6 @@
             <li>
               <a href="#" class="sidebar-item" id="pNavUnassigned" onclick="window.sidebarProfAction('unassigned')">
                 <i class="fas fa-inbox"></i> Casos sin asignar
-              </a>
-            </li>
-            <li>
-              <a href="#" class="sidebar-item" id="pNavAvail" onclick="window.sidebarProfAction('availability')">
-                <i class="fas fa-clock"></i> Mis Disponibilidades
               </a>
             </li>
             <li>
