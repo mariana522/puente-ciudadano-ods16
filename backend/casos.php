@@ -39,12 +39,58 @@ function getRequestUser() {
 }
 
 // Determinar tabla o vista relacional
+$hasResumenView = false;
 $sourceTable = 'casos';
 try {
     $checkView = $pdo->query("SELECT 1 FROM vista_casos_resumen LIMIT 1");
-    if ($checkView) $sourceTable = 'vista_casos_resumen';
+    if ($checkView !== false) {
+        $hasResumenView = true;
+        $sourceTable = 'vista_casos_resumen';
+    }
 } catch (Exception $e) {
+    $hasResumenView = false;
     $sourceTable = 'casos';
+}
+
+// Intentar crear la vista si existen las tablas relacionales normalizadas pero no la vista
+if (!$hasResumenView) {
+    try {
+        $pdo->exec("CREATE OR REPLACE VIEW vista_casos_resumen AS
+        SELECT 
+            c.id AS caso_id,
+            c.codigo AS codigo,
+            u_c.id AS ciudadano_id,
+            u_c.nombre AS ciudadano,
+            u_c.correo AS correo_ciudadano,
+            cat.nombre AS tipo,
+            c.subtipo AS subtipo,
+            c.descripcion AS descripcion,
+            c.estado AS estado,
+            COALESCE(u_p.nombre, 'Por asignar') AS profesional_asignado,
+            u_p.id AS profesional_id,
+            u_p.correo AS correo_profesional,
+            c.fecha_radicacion AS fecha,
+            inst.nombre AS institucion,
+            inst.direccion AS direccion_institucion,
+            inst.telefono AS telefono_institucion,
+            inst.horario_atencion AS horario_institucion,
+            COALESCE(c.sala_url, s.room_url) AS sala_url,
+            ac.observaciones AS observaciones,
+            c.creado_en AS creado_en,
+            c.actualizado_en AS actualizado_en
+        FROM casos c
+        JOIN usuarios u_c ON c.ciudadano_id = u_c.id
+        JOIN categorias_casos cat ON c.categoria_id = cat.id
+        JOIN instituciones inst ON c.institucion_id = inst.id
+        LEFT JOIN asignaciones_casos ac ON (ac.caso_id = c.id AND ac.activo = 1)
+        LEFT JOIN usuarios u_p ON ac.profesional_id = u_p.id
+        LEFT JOIN salas_videollamada s ON s.caso_id = c.id");
+        $hasResumenView = true;
+        $sourceTable = 'vista_casos_resumen';
+    } catch (Exception $e) {
+        $hasResumenView = false;
+        $sourceTable = 'casos';
+    }
 }
 
 try {
@@ -99,21 +145,55 @@ try {
         // B. Listado con aislamiento estricto segun el usuario y su rol
         if ($reqUser['role'] === 'professional') {
             if ($isUnassigned) {
-                $stmt = $pdo->query("SELECT * FROM {$sourceTable} WHERE profesional_asignado IS NULL OR profesional_asignado = 'Por asignar' OR profesional_asignado = 'Sin asignar' ORDER BY caso_id DESC");
-                $casos = $stmt->fetchAll();
+                // Compatible tanto con vista_casos_resumen como con tabla casos (3FN y plana)
+                if ($hasResumenView) {
+                    $stmt = $pdo->query("SELECT * FROM vista_casos_resumen 
+                        WHERE (profesional_asignado IS NULL OR profesional_asignado = 'Por asignar' OR profesional_asignado = 'Sin asignar') AND (profesional_id IS NULL OR profesional_id = 0) 
+                        ORDER BY caso_id DESC");
+                    $casos = $stmt->fetchAll();
+                } else {
+                    $hasColProf = false;
+                    try {
+                        $colCheck = $pdo->query("SHOW COLUMNS FROM casos LIKE 'profesional_asignado'");
+                        $hasColProf = ($colCheck && $colCheck->rowCount() > 0);
+                    } catch (Exception $e) {}
+
+                    if ($hasColProf) {
+                        $stmt = $pdo->query("SELECT * FROM casos 
+                            WHERE (profesional_asignado IS NULL OR profesional_asignado = 'Por asignar' OR profesional_asignado = 'Sin asignar' OR LOWER(estado) = 'pendiente') 
+                            ORDER BY id DESC");
+                        $casos = $stmt->fetchAll();
+                    } else {
+                        // 3FN directa sin vista
+                        $stmt = $pdo->query("SELECT c.*, c.id AS caso_id, 'Por asignar' AS profesional_asignado, NULL AS profesional_id 
+                            FROM casos c 
+                            LEFT JOIN asignaciones_casos ac ON (ac.caso_id = c.id AND ac.activo = 1) 
+                            WHERE (ac.profesional_id IS NULL OR LOWER(c.estado) = 'pendiente') 
+                            ORDER BY c.id DESC");
+                        $casos = $stmt->fetchAll();
+                    }
+                }
             } else if (!empty($reqUser['name']) || !empty($reqUser['email'])) {
                 $profIdentifier = $reqUser['name'] ?: $reqUser['email'];
-                $stmt = $pdo->prepare("SELECT * FROM {$sourceTable} WHERE LOWER(profesional_asignado) = ? OR LOWER(correo_profesional) = ? ORDER BY caso_id DESC");
-                $stmt->execute([strtolower($profIdentifier), strtolower($reqUser['email'])]);
-                $casos = $stmt->fetchAll();
+                if ($hasResumenView) {
+                    $stmt = $pdo->prepare("SELECT * FROM vista_casos_resumen WHERE LOWER(profesional_asignado) = ? OR LOWER(correo_profesional) = ? ORDER BY caso_id DESC");
+                    $stmt->execute([strtolower($profIdentifier), strtolower($reqUser['email'])]);
+                    $casos = $stmt->fetchAll();
+                } else {
+                    $stmt = $pdo->prepare("SELECT * FROM casos WHERE LOWER(profesional_asignado) = ? ORDER BY id DESC");
+                    $stmt->execute([strtolower($profIdentifier)]);
+                    $casos = $stmt->fetchAll();
+                }
             } else {
-                $stmt = $pdo->query("SELECT * FROM {$sourceTable} ORDER BY caso_id DESC");
+                $orderCol = $hasResumenView ? 'caso_id' : 'id';
+                $stmt = $pdo->query("SELECT * FROM {$sourceTable} ORDER BY {$orderCol} DESC");
                 $casos = $stmt->fetchAll();
             }
         } else {
             // Rol Ciudadano: aislamiento TOTAL. Solo casos creados por este ciudadano
             if (!empty($reqUser['email']) || !empty($reqUser['name'])) {
-                $stmt = $pdo->prepare("SELECT * FROM {$sourceTable} WHERE LOWER(correo_ciudadano) = ? OR LOWER(ciudadano) = ? ORDER BY caso_id DESC");
+                $orderCol = $hasResumenView ? 'caso_id' : 'id';
+                $stmt = $pdo->prepare("SELECT * FROM {$sourceTable} WHERE LOWER(correo_ciudadano) = ? OR LOWER(ciudadano) = ? ORDER BY {$orderCol} DESC");
                 $stmt->execute([$reqUser['email'], strtolower($reqUser['name'])]);
                 $casos = $stmt->fetchAll();
             } else {
@@ -135,37 +215,45 @@ try {
             }
 
             return [
-                'id'          => $c['codigo'],
-                'citizen'     => $c['ciudadano'],
-                'citizenEmail'=> $c['correo_ciudadano'],
-                'type'        => $c['tipo'],
-                'subType'     => $c['subtipo'],
-                'description' => $c['descripcion'],
-                'status'      => $c['estado'],
+                'id'          => $c['codigo'] ?? ('CAS-00' . ($c['id'] ?? '100')),
+                'codigo'      => $c['codigo'] ?? ('CAS-00' . ($c['id'] ?? '100')),
+                'citizen'     => $c['ciudadano'] ?? 'Ciudadano Anónimo',
+                'citizenEmail'=> $c['correo_ciudadano'] ?? '',
+                'type'        => $c['tipo'] ?? 'Orientación General',
+                'subType'     => $c['subtipo'] ?? $c['tipo'] ?? '',
+                'description' => $c['descripcion'] ?? '',
+                'status'      => $c['estado'] ?? 'Pendiente',
                 'assignedTo'  => $c['profesional_asignado'] ?? 'Por asignar',
+                'profesional_asignado' => $c['profesional_asignado'] ?? 'Por asignar',
+                'profesional_id'       => $c['profesional_id'] ?? null,
                 'date'        => $c['fecha'] ?? $c['fecha_radicacion'] ?? date('Y-m-d'),
-                'institution' => $c['institucion'] ?? 'Consultorio Juridico',
+                'institution' => $c['institucion'] ?? 'Consultorio Jurídico',
                 'instAddress' => $c['direccion_institucion'] ?? '',
                 'instPhone'   => $c['telefono_institucion'] ?? '',
                 'instHours'   => $c['horario_institucion'] ?? '',
+                'roomUrl'     => $c['sala_url'] ?? '',
                 'checklist'   => $checklist,
                 'observations'=> $c['observaciones'] ?? '',
-                'roomUrl'     => $c['sala_url'] ?? '',
                 'createdAt'   => $c['creado_en'] ?? date('Y-m-d H:i:s')
             ];
         }, $casos);
 
-        echo json_encode(['success' => true, 'count' => count($result), 'data' => $result]);
+        echo json_encode([
+            'success' => true,
+            'count'   => count($result),
+            'data'    => $result
+        ]);
         exit();
     }
 
     // -------------------------------------------------------------------------
-    // 2. RECLAMAR CASO (action=claim)
+    // 2. RECLAMAR CASO POR PARTE DE UN PROFESIONAL (action=claim)
     // -------------------------------------------------------------------------
-    if ($action === 'claim' && ($method === 'POST' || $method === 'PUT')) {
+    if ($method === 'POST' && $action === 'claim') {
         $data = getJsonInput();
         $caseId = $data['id'] ?? $data['caseId'] ?? '';
         $profName = $data['profName'] ?? $data['assignedTo'] ?? '';
+        $profEmail = $data['profEmail'] ?? $data['assignedToEmail'] ?? '';
 
         if (!$caseId || !$profName) {
             http_response_code(400);
@@ -173,9 +261,14 @@ try {
             exit();
         }
 
-        // 1. Actualizar estado en casos
-        $stmt = $pdo->prepare("UPDATE casos SET estado = 'En curso' WHERE codigo = ?");
-        $stmt->execute([$caseId]);
+        // 1. Actualizar estado a 'En curso' y profesional_asignado en casos
+        try {
+            $stmt = $pdo->prepare("UPDATE casos SET estado = 'En curso', profesional_asignado = ? WHERE codigo = ?");
+            $stmt->execute([$profName, $caseId]);
+        } catch (Exception $e) {
+            $stmt = $pdo->prepare("UPDATE casos SET estado = 'En curso' WHERE codigo = ?");
+            $stmt->execute([$caseId]);
+        }
 
         // 2. Gestionar asignacion formal en 3FN si existe asignaciones_casos
         try {
@@ -183,11 +276,14 @@ try {
             $stmtC->execute([$caseId]);
             $cDbId = $stmtC->fetchColumn();
 
-            $stmtP = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(nombre) = LOWER(?) LIMIT 1");
-            $stmtP->execute([$profName]);
+            $stmtP = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(nombre) = LOWER(?) OR LOWER(correo) = LOWER(?) LIMIT 1");
+            $stmtP->execute([$profName, $profEmail]);
             $pDbId = $stmtP->fetchColumn();
 
             if ($cDbId && $pDbId) {
+                // Desactivar asignaciones anteriores
+                $pdo->prepare("UPDATE asignaciones_casos SET activo = 0 WHERE caso_id = ?")->execute([$cDbId]);
+                // Insertar nueva asignacion activa
                 $stmtAc = $pdo->prepare("INSERT INTO asignaciones_casos (caso_id, profesional_id, activo, observaciones) VALUES (?, ?, 1, 'Asignacion auto-reclamada')");
                 $stmtAc->execute([$cDbId, $pDbId]);
             }
@@ -249,7 +345,7 @@ try {
     }
 
     // -------------------------------------------------------------------------
-    // 4. CREAR NUEVO EXPEDIENTE DE CASO (POST EN 3FN)
+    // 4. CREAR NUEVO EXPEDIENTE DE CASO (POST)
     // -------------------------------------------------------------------------
     if ($method === 'POST') {
         $data = getJsonInput();
@@ -259,74 +355,94 @@ try {
         $ciudadano = $data['citizen'] ?? ($reqUser['name'] ?: 'Ciudadano Anonimo');
         $correo = strtolower($data['citizenEmail'] ?? ($reqUser['email'] ?: ''));
         $tipo = $data['type'] ?? 'Problema laboral';
-        $subtipo = $data['subType'] ?? $tipo;
-        $descripcion = $data['description'] ?? '';
-        $estado = $data['status'] ?? 'Pendiente';
+        $subtipo = $data['subType'] ?? $data['subtipo'] ?? $tipo;
+        $descripcion = $data['description'] ?? $data['descripcion'] ?? '';
+        $estado = !empty($data['status']) ? $data['status'] : 'Pendiente'; // Estado inicial correcto
+        $profAsignado = !empty($data['assignedTo']) ? $data['assignedTo'] : 'Por asignar'; // 'Por asignar' inicial
         $institucion = $data['institution'] ?? 'Consultorio Juridico';
         $checklist = $data['checklist'] ?? [];
         $roomUrl = $data['roomUrl'] ?? null;
 
-        // 1. Resolver usuario ciudadano
-        $userId = null;
-        if (!empty($correo)) {
-            $stmtU = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(correo) = ?");
-            $stmtU->execute([$correo]);
-            $userId = $stmtU->fetchColumn();
-        }
-        if (!$userId) {
-            $stmtFirst = $pdo->query("SELECT id FROM usuarios WHERE rol_id = 1 LIMIT 1");
-            $userId = $stmtFirst->fetchColumn() ?: 1;
-        }
-
-        // 2. Resolver categoria
-        $catId = 1;
+        // Comprobar si la tabla casos usa el esquema normalizado 3FN (ciudadano_id) o plano
+        $hasColCiudadanoId = false;
         try {
-            $stmtCat = $pdo->prepare("SELECT id FROM categorias_casos WHERE LOWER(nombre) LIKE ? LIMIT 1");
-            $stmtCat->execute(['%' . strtolower($tipo) . '%']);
-            $catId = $stmtCat->fetchColumn() ?: 1;
+            $colCheck = $pdo->query("SHOW COLUMNS FROM casos LIKE 'ciudadano_id'");
+            $hasColCiudadanoId = ($colCheck && $colCheck->rowCount() > 0);
         } catch (Exception $e) {}
 
-        // 3. Resolver institucion
-        $instId = 1;
-        try {
-            $stmtInst = $pdo->prepare("SELECT id FROM instituciones WHERE LOWER(nombre) LIKE ? LIMIT 1");
-            $stmtInst->execute(['%' . strtolower($institucion) . '%']);
-            $instId = $stmtInst->fetchColumn() ?: 1;
-        } catch (Exception $e) {}
+        if ($hasColCiudadanoId) {
+            // Esquema normalizado 3FN
+            $userId = null;
+            if (!empty($correo)) {
+                $stmtU = $pdo->prepare("SELECT id FROM usuarios WHERE LOWER(correo) = ?");
+                $stmtU->execute([$correo]);
+                $userId = $stmtU->fetchColumn();
+            }
+            if (!$userId) {
+                $stmtFirst = $pdo->query("SELECT id FROM usuarios WHERE rol_id = 1 LIMIT 1");
+                $userId = $stmtFirst->fetchColumn() ?: 1;
+            }
 
-        // 4. Insertar caso en tabla casos
-        $sql = "INSERT INTO casos (
-            codigo, ciudadano_id, categoria_id, institucion_id, subtipo, descripcion,
-            estado, fecha_radicacion, sala_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            $codigo, $userId, $catId, $instId, $subtipo, $descripcion,
-            $estado, date('Y-m-d'), $roomUrl
-        ]);
-        $casoDbId = $pdo->lastInsertId();
-
-        // 5. Insertar checklist documental en tabla atómica checklist_casos
-        if (!empty($checklist) && is_array($checklist)) {
+            $catId = 1;
             try {
-                $chkInsert = $pdo->prepare("INSERT INTO checklist_casos (caso_id, requisito, completado) VALUES (?, ?, 0)");
-                foreach ($checklist as $item) {
-                    if (is_string($item) && trim($item) !== '') {
-                        $chkInsert->execute([$casoDbId, trim($item)]);
-                    }
-                }
+                $stmtCat = $pdo->prepare("SELECT id FROM categorias_casos WHERE LOWER(nombre) LIKE ? LIMIT 1");
+                $stmtCat->execute(['%' . strtolower($tipo) . '%']);
+                $catId = $stmtCat->fetchColumn() ?: 1;
             } catch (Exception $e) {}
+
+            $instId = 1;
+            try {
+                $stmtInst = $pdo->prepare("SELECT id FROM instituciones WHERE LOWER(nombre) LIKE ? LIMIT 1");
+                $stmtInst->execute(['%' . strtolower($institucion) . '%']);
+                $instId = $stmtInst->fetchColumn() ?: 1;
+            } catch (Exception $e) {}
+
+            $sql = "INSERT INTO casos (
+                codigo, ciudadano_id, categoria_id, institucion_id, subtipo, descripcion,
+                estado, fecha_radicacion, sala_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $codigo, $userId, $catId, $instId, $subtipo, $descripcion,
+                $estado, date('Y-m-d'), $roomUrl
+            ]);
+            $casoDbId = $pdo->lastInsertId();
+
+            if (!empty($checklist) && is_array($checklist)) {
+                try {
+                    $chkInsert = $pdo->prepare("INSERT INTO checklist_casos (caso_id, requisito, completado) VALUES (?, ?, 0)");
+                    foreach ($checklist as $item) {
+                        if (is_string($item) && trim($item) !== '') {
+                            $chkInsert->execute([$casoDbId, trim($item)]);
+                        }
+                    }
+                } catch (Exception $e) {}
+            }
+        } else {
+            // Esquema directo / plano (database.sql)
+            $sql = "INSERT INTO casos (
+                codigo, ciudadano, correo_ciudadano, tipo, subtipo, descripcion,
+                estado, profesional_asignado, fecha, institucion, sala_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([
+                $codigo, $ciudadano, $correo, $tipo, $subtipo, $descripcion,
+                $estado, $profAsignado, date('Y-m-d'), $institucion, $roomUrl
+            ]);
+            $casoDbId = $pdo->lastInsertId();
         }
 
         echo json_encode([
             'success' => true,
-            'message' => 'Expediente registrado en esquema relacional 3FN con exito.',
+            'message' => 'Expediente registrado exitosamente con estado inicial Pendiente y Por asignar.',
             'id'      => $codigo,
             'data'    => [
                 'id'           => $codigo,
+                'codigo'       => $codigo,
                 'citizen'      => $ciudadano,
                 'citizenEmail' => $correo,
                 'status'       => $estado,
+                'assignedTo'   => $profAsignado,
                 'type'         => $tipo
             ]
         ]);

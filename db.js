@@ -596,10 +596,14 @@ const PuenteDB = {
         });
       },
 
-      // Casos sin asignar disponibles para cualquier profesional
+      // Casos sin asignar disponibles para cualquier profesional (ODS 16)
       getUnassigned() {
         const cases = this.getAll();
-        return cases.filter(c => !c.assignedTo || c.assignedTo === 'Por asignar');
+        return cases.filter(c => {
+          if (!c) return false;
+          const assigned = (c.assignedTo || c.profesional_asignado || '').trim().toLowerCase();
+          return !assigned || assigned === 'por asignar' || assigned === 'sin asignar' || assigned === 'null' || assigned === 'undefined';
+        });
       },
 
       insert(newCase) {
@@ -624,7 +628,12 @@ const PuenteDB = {
           createdAt: new Date().toISOString()
         };
 
-        cases.unshift(record);
+        const existingIdx = cases.findIndex(c => c.id === record.id);
+        if (existingIdx !== -1) {
+          cases[existingIdx] = { ...cases[existingIdx], ...record };
+        } else {
+          cases.unshift(record);
+        }
         saveToStorage(STORAGE_KEYS.CASES, cases);
         if (PuenteDB.mysql) PuenteDB.mysql.createCase(record);
         return record;
@@ -652,13 +661,14 @@ const PuenteDB = {
         return cases[index];
       },
 
-      // Asignar caso sin asignar a un profesional
+      // Asignar caso sin asignar a un profesional (ODS 16)
       claim(caseId, profName, profEmail = '') {
         const cases = this.getAll();
         const index = cases.findIndex(c => c.id === caseId);
         if (index === -1) return null;
 
         cases[index].assignedTo = profName;
+        cases[index].profesional_asignado = profName;
         if (profEmail) cases[index].assignedToEmail = profEmail;
         if (cases[index].status === 'Pendiente') {
           cases[index].status = 'En curso';
@@ -666,7 +676,7 @@ const PuenteDB = {
         cases[index].updatedAt = new Date().toISOString();
 
         saveToStorage(STORAGE_KEYS.CASES, cases);
-        if (PuenteDB.mysql) PuenteDB.mysql.claimCase(caseId, profName);
+        if (PuenteDB.mysql) PuenteDB.mysql.claimCase(caseId, profName, profEmail);
         return cases[index];
       },
 
@@ -1082,6 +1092,60 @@ const PuenteDB = {
             }
           }
         }
+        // Sincronizar periódicamente lista de casos de la base de datos
+        this.casePollCounter = (this.casePollCounter || 0) + 1;
+        if (this.casePollCounter % 2 === 0) {
+          await this.syncCases();
+        }
+      },
+
+      async syncCases() {
+        try {
+          let serverCases = null;
+          try {
+            const res = await fetch('/api/casos', { cache: 'no-cache' });
+            if (res.ok) {
+              const json = await res.json();
+              if (json.success && Array.isArray(json.data)) serverCases = json.data;
+            }
+          } catch (e) {}
+
+          if (!serverCases && PuenteDB.mysql) {
+            serverCases = await PuenteDB.mysql.fetchCases();
+          }
+
+          if (serverCases && Array.isArray(serverCases) && serverCases.length > 0) {
+            const localCases = PuenteDB.cases.getAll();
+            let changed = false;
+
+            serverCases.forEach(sc => {
+              const localIdx = localCases.findIndex(lc => lc.id === sc.id);
+              if (localIdx === -1) {
+                localCases.unshift(sc);
+                changed = true;
+              } else {
+                // Actualizar si cambió estado o asignación en servidor
+                if (localCases[localIdx].status !== sc.status || localCases[localIdx].assignedTo !== sc.assignedTo) {
+                  localCases[localIdx] = { ...localCases[localIdx], ...sc };
+                  changed = true;
+                }
+              }
+            });
+
+            if (changed) {
+              saveToStorage(STORAGE_KEYS.CASES, localCases);
+              if (typeof window !== 'undefined' && window.state) {
+                window.state.cases = localCases;
+                if (typeof window.renderProfessionalTable === 'function') {
+                  window.renderProfessionalTable();
+                }
+                if (typeof window.renderCitizenTable === 'function') {
+                  window.renderCitizenTable();
+                }
+              }
+            }
+          }
+        } catch (err) {}
       },
 
       async syncCase(caseId, triggerUi = true) {
@@ -1404,6 +1468,15 @@ const PuenteDB = {
 
       async createCase(caseData) {
         try {
+          const res = await fetch('/api/casos', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(caseData)
+          });
+          if (res.ok) return await res.json();
+        } catch (e) {}
+
+        try {
           const res = await this.request('casos.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1428,12 +1501,21 @@ const PuenteDB = {
         }
       },
 
-      async claimCase(caseId, profName) {
+      async claimCase(caseId, profName, profEmail = '') {
+        try {
+          const res = await fetch('/api/casos?action=claim', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ caseId, profName, profEmail })
+          });
+          if (res.ok) return await res.json();
+        } catch (e) {}
+
         try {
           const res = await this.request('casos.php?action=claim', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ caseId, profName })
+            body: JSON.stringify({ caseId, profName, profEmail })
           });
           return await res.json();
         } catch (e) {

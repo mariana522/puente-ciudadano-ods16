@@ -28,6 +28,7 @@ if (!fs.existsSync(DB_DIR)) {
 
 const MESSAGES_FILE = path.join(DB_DIR, 'messages_store.json');
 const ROOMS_FILE = path.join(DB_DIR, 'rooms_store.json');
+const CASES_FILE = path.join(DB_DIR, 'cases_store.json');
 
 // Normalizador estándar de identificadores de caso
 function normalizeCaseId(caseId) {
@@ -255,6 +256,308 @@ function setCachedRoom(cleanCaseId, roomData) {
   saveRoomsStore(store);
 }
 
+
+// ==============================================================================
+// BASE DE DATOS Y GESTIÓN PERSISTENTE DE CASOS (ODS 16 - MULTIDISPOSITIVO)
+// ==============================================================================
+const DEFAULT_SEED_CASES = [
+  {
+    id: 'CAS-00138',
+    citizen: 'Mariana Sibaja',
+    citizenEmail: 'mariana.sibaja@ejemplo.com',
+    type: 'Problema laboral',
+    subType: 'Despido injustificado sin liquidación',
+    description: 'Despido injustificado sin liquidación de prestaciones sociales ni entrega de certificado laboral.',
+    status: 'En curso',
+    assignedTo: 'Dra. Elena Gómez',
+    assignedToEmail: 'elena.gomez@asesores.org',
+    date: '2026-09-20',
+    institution: 'Inspección del Trabajo',
+    instAddress: 'Calle 28 # 4-50, Sede Central MinTrabajo',
+    instPhone: 'Línea Gratuita Nacional 01 8000 112518',
+    instHours: 'Lunes a Viernes 8:00 am - 4:00 pm',
+    checklist: [
+      'Copia de cédula de ciudadanía del trabajador',
+      'Contrato de trabajo o desprendibles de pago / extractos',
+      'Carta de despido laboral o constancia de retiro',
+      'Liquidación preliminar elaborada en la plataforma'
+    ],
+    observations: 'Se inició sesión de orientación virtual y se redactó borrador de solicitud de conciliación laboral.'
+  },
+  {
+    id: 'CAS-00139',
+    citizen: 'Carlos Rodríguez',
+    citizenEmail: 'carlos.rodriguez@ejemplo.com',
+    type: 'Derechos ciudadanos',
+    subType: 'Falta de respuesta a petición oficial',
+    description: 'Demora superior a 30 días hábiles en respuesta de petición oficial ante la administración municipal.',
+    status: 'Pendiente',
+    assignedTo: 'Por asignar',
+    assignedToEmail: '',
+    date: '2026-09-21',
+    institution: 'Personería Municipal',
+    instAddress: 'Palacio Municipal, Carrera 3 # 12-20',
+    instPhone: '(604) 789 2020 Ext. 104',
+    instHours: 'Lunes a Viernes 7:30 am - 12:00 m / 1:30 pm - 5:00 pm',
+    checklist: [
+      'Copia radicada del Derecho de Petición con sello de recibido',
+      'Copia del documento de identidad',
+      'Constancia de vencimiento de términos legales (15 o 30 días)',
+      'Borrador de Acción de Tutela por violación al Derecho de Petición'
+    ],
+    observations: ''
+  },
+  {
+    id: 'CAS-00140',
+    citizen: 'Lucía Fernández',
+    citizenEmail: 'lucia.fernandez@ejemplo.com',
+    type: 'Familia',
+    subType: 'Fijación de cuota alimentaria',
+    description: 'Incumplimiento reiterado de acuerdo verbal para el sostenimiento de dos menores de edad.',
+    status: 'Finalizado',
+    assignedTo: 'Dr. Mauricio Padilla',
+    assignedToEmail: 'mauricio.padilla@asesores.org',
+    date: '2026-09-18',
+    institution: 'Comisaría de Familia',
+    instAddress: 'Calle 14 # 8-32, Barrio Centro',
+    instPhone: '(604) 791 4500',
+    instHours: 'Lunes a Viernes 8:00 am - 5:00 pm',
+    checklist: [
+      'Registro Civil de Nacimiento de los menores',
+      'Copia de cédula de la madre o solicitante',
+      'Relación aproximada de gastos mensuales de los hijos',
+      'Copia de citación previa o acuerdo de conciliación extrajudicial'
+    ],
+    observations: 'Audiencia de conciliación culminada con acta de acuerdo formalmente suscrita.'
+  }
+];
+
+function loadCasesStore() {
+  try {
+    if (fs.existsSync(CASES_FILE)) {
+      const raw = fs.readFileSync(CASES_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (err) {
+    console.error('[Casos DB] Error leyendo ' + CASES_FILE + ':', err.message);
+  }
+  return null;
+}
+
+function saveCasesStore(store) {
+  try {
+    fs.writeFileSync(CASES_FILE, JSON.stringify(store, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[Casos DB] Error escribiendo ' + CASES_FILE + ':', err.message);
+  }
+}
+
+function getAllCases() {
+  const cases = loadCasesStore();
+  if (!cases || !Array.isArray(cases) || cases.length === 0) {
+    saveCasesStore(DEFAULT_SEED_CASES);
+    return [...DEFAULT_SEED_CASES];
+  }
+  return cases;
+}
+
+function saveAllCases(cases) {
+  saveCasesStore(cases);
+}
+
+function handleCasesRequest(req, res, parsedUrl) {
+  const method = req.method;
+  const query = parsedUrl.query || {};
+  const action = query.action || '';
+  const isUnassigned = query.unassigned === 'true' || query.unassigned === '1';
+
+  const userEmail = (query.user_email || query.userEmail || req.headers['x-user-email'] || '').trim().toLowerCase();
+  const userRole = (query.user_role || query.userRole || req.headers['x-user-role'] || 'citizen').trim().toLowerCase();
+  const userName = (query.user_name || query.userName || req.headers['x-user-name'] || '').trim().toLowerCase();
+  const codigo = query.codigo || query.id || '';
+
+  const cases = getAllCases();
+
+  // 1. GET: Consultar casos
+  if (method === 'GET') {
+    if (codigo) {
+      const found = cases.find(c => c.id === codigo || c.codigo === codigo);
+      if (!found) {
+        res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, message: 'Expediente no encontrado.' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, data: found }));
+      return;
+    }
+
+    if (isUnassigned) {
+      const unassigned = cases.filter(c => {
+        const assigned = (c.assignedTo || c.profesional_asignado || '').trim().toLowerCase();
+        return !assigned || assigned === 'por asignar' || assigned === 'sin asignar' || assigned === 'null' || assigned === 'undefined';
+      });
+
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ success: true, count: unassigned.length, data: unassigned }));
+      return;
+    }
+
+    if (userRole === 'professional') {
+      if (userName || userEmail) {
+        const cleanUserName = userName.replace(/^(dra?\.\s*)/i, '').trim();
+        const profCases = cases.filter(c => {
+          const assigned = (c.assignedTo || '').trim().toLowerCase();
+          const cleanAssigned = assigned.replace(/^(dra?\.\s*)/i, '').trim();
+          const matchEmail = c.assignedToEmail && c.assignedToEmail.toLowerCase() === userEmail;
+          const matchName = assigned === userName || cleanAssigned === cleanUserName;
+          return matchEmail || matchName;
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, count: profCases.length, data: profCases }));
+        return;
+      }
+    } else if (userRole === 'citizen') {
+      if (userEmail || userName) {
+        const citizenCases = cases.filter(c => {
+          const matchEmail = c.citizenEmail && c.citizenEmail.toLowerCase() === userEmail;
+          const matchName = c.citizen && c.citizen.trim().toLowerCase() === userName;
+          return matchEmail || matchName;
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: true, count: citizenCases.length, data: citizenCases }));
+        return;
+      }
+    }
+
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ success: true, count: cases.length, data: cases }));
+    return;
+  }
+
+  // 2. POST / PUT
+  if (method === 'POST' || method === 'PUT') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      let data = {};
+      try { data = JSON.parse(body || '{}'); } catch (e) {}
+
+      // A. Reclamar / Asignar caso
+      if (action === 'claim' || data.action === 'claim') {
+        const caseId = data.caseId || data.id || query.caseId || query.id;
+        const profName = data.profName || data.assignedTo || 'Dra. Elena Gómez';
+        const profEmail = data.profEmail || data.assignedToEmail || '';
+
+        const idx = cases.findIndex(c => c.id === caseId || c.codigo === caseId);
+        if (idx === -1) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, message: 'Expediente no encontrado para asignación.' }));
+          return;
+        }
+
+        cases[idx].assignedTo = profName;
+        cases[idx].profesional_asignado = profName;
+        if (profEmail) cases[idx].assignedToEmail = profEmail;
+        if (cases[idx].status === 'Pendiente') {
+          cases[idx].status = 'En curso';
+        }
+        cases[idx].updatedAt = new Date().toISOString();
+
+        saveAllCases(cases);
+
+        io.emit('case_claimed', { caseId, profName, profEmail, caseRecord: cases[idx] });
+        io.emit('case_updated', cases[idx]);
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: true,
+          message: 'Caso ' + caseId + ' asignado exitosamente a ' + profName,
+          data: cases[idx]
+        }));
+        return;
+      }
+
+      // B. Actualizar estado / observaciones
+      if (action === 'update' || data.action === 'update' || method === 'PUT') {
+        const caseId = data.id || data.codigo || query.id;
+        const idx = cases.findIndex(c => c.id === caseId || c.codigo === caseId);
+        if (idx === -1) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({ success: false, message: 'Expediente no encontrado para actualizar.' }));
+          return;
+        }
+
+        if (data.status || data.estado) cases[idx].status = data.status || data.estado;
+        if (data.observations !== undefined) cases[idx].observations = data.observations;
+        if (data.roomUrl || data.sala_url) cases[idx].roomUrl = data.roomUrl || data.sala_url;
+        cases[idx].updatedAt = new Date().toISOString();
+
+        saveAllCases(cases);
+
+        io.emit('case_updated', cases[idx]);
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: true,
+          message: 'Expediente ' + caseId + ' actualizado exitosamente.',
+          data: cases[idx]
+        }));
+        return;
+      }
+
+      // C. Registrar nuevo caso con estado inicial 'Pendiente' y 'Por asignar'
+      const newCaseId = data.id || ('CAS-00' + Math.floor(100 + Math.random() * 900));
+      const newCaseRecord = {
+        id: newCaseId,
+        citizen: data.citizen || 'Ciudadano Anónimo',
+        citizenEmail: data.citizenEmail || '',
+        type: data.type || 'Orientación Jurídica',
+        subType: data.subType || data.subtipo || data.type || '',
+        description: data.description || data.descripcion || '',
+        status: data.status || 'Pendiente', // Estado inicial exacto para casos sin asignar
+        assignedTo: data.assignedTo || 'Por asignar', // 'Por asignar' para que aparezca en bandeja de profesionales
+        assignedToEmail: data.assignedToEmail || '',
+        date: data.date || new Date().toISOString().split('T')[0],
+        institution: data.institution || 'Consultorio Jurídico',
+        instAddress: data.instAddress || '',
+        instPhone: data.instPhone || '',
+        instHours: data.instHours || '',
+        checklist: data.checklist || [],
+        observations: data.observations || '',
+        createdAt: new Date().toISOString()
+      };
+
+      const existingIdx = cases.findIndex(c => c.id === newCaseId);
+      if (existingIdx !== -1) {
+        cases[existingIdx] = { ...cases[existingIdx], ...newCaseRecord };
+      } else {
+        cases.unshift(newCaseRecord);
+      }
+
+      saveAllCases(cases);
+
+      io.emit('new_case', newCaseRecord);
+      io.emit('case_created', newCaseRecord);
+
+      console.log('[Servidor Casos] Nuevo caso registrado con estado Pendiente y Por asignar: #' + newCaseId);
+
+      res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        message: 'Expediente registrado exitosamente con estado inicial Pendiente.',
+        data: newCaseRecord
+      }));
+    });
+    return;
+  }
+
+  res.writeHead(405, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'Method Not Allowed' }));
+}
+
 // Manejo de salas de videollamada públicas y gratuitas con Jitsi Meet
 function handleDailyRoomRequest(req, res, parsedUrl) {
   let body = '';
@@ -436,6 +739,17 @@ const server = http.createServer((req, res) => {
       timestamp: new Date().toISOString(),
       roomsCount: io.sockets.adapter.rooms.size
     }));
+    return;
+  }
+
+  // 2.1 API de Casos REST (ODS 16 - Bandeja sin asignar y asignados)
+  if (
+    pathname === '/api/casos' ||
+    pathname === '/api/cases' ||
+    pathname === '/backend/casos.php' ||
+    pathname === '/api/casos.php'
+  ) {
+    handleCasesRequest(req, res, parsedUrl);
     return;
   }
 

@@ -1,9 +1,12 @@
 
-  // Helper de asignación estricta e independiente por profesional
+  // Helper de asignación estricta e independiente por profesional (ODS 16)
   function isCaseAssignedToProf(c, profUser) {
     if (!c || !profUser) return false;
-    const assigned = (c.assignedTo || '').trim().toLowerCase();
-    if (!assigned || assigned === 'por asignar' || assigned === 'sin asignar') return false;
+    const assigned = (c.assignedTo || c.profesional_asignado || '').trim().toLowerCase();
+    if (!assigned || assigned === 'por asignar' || assigned === 'sin asignar' || assigned === 'null' || assigned === 'undefined') return false;
+    if (c.profesional_id === null && (!c.assignedTo || assigned === 'por asignar')) return false;
+    // Un caso en estado Pendiente sin correo de profesional o por asignar nunca cuenta como asignado
+    if (c.status && c.status.toLowerCase() === 'pendiente' && (!c.assignedToEmail || assigned === 'por asignar')) return false;
 
     const profName = (profUser.name || '').trim().toLowerCase();
     const profEmail = (profUser.email || '').trim().toLowerCase();
@@ -512,8 +515,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (action === 'cases') {
       document.getElementById('pNavCases')?.classList.add('active');
-      renderProfessionalTable();
-      showToast('Mostrando casos pendientes de orientación.', 'info');
+      window.switchProfViewMode('assigned');
+      showToast('Mostrando casos asignados.', 'info');
+    } else if (action === 'unassigned') {
+      document.getElementById('pNavUnassigned')?.classList.add('active');
+      window.switchProfViewMode('unassigned');
+      showToast('Mostrando casos sin asignar en la red ODS 16.', 'info');
     } else if (action === 'agenda') {
       document.getElementById('pNavAgenda')?.classList.add('active');
       const agenda = document.getElementById('cardAgendaProf');
@@ -565,8 +572,9 @@ document.addEventListener('DOMContentLoaded', () => {
       type: cat,
       subType: cat,
       description: desc,
-      status: 'En curso',
-      assignedTo: 'Dra. Elena Gómez',
+      status: 'Pendiente', // Estado inicial correcto
+      assignedTo: 'Por asignar', // Disponible para asignación profesional
+      assignedToEmail: '',
       date: new Date().toISOString().split('T')[0],
       institution: getInstitutionByCategory(cat),
       instAddress: institutionsData[getInstitutionByCategory(cat)]?.address || '',
@@ -1206,6 +1214,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   window.switchProfViewMode = (mode) => {
     state.profViewMode = mode;
+    if (window.PuenteDB) {
+      state.cases = window.PuenteDB.cases.getAll();
+    }
     document.querySelectorAll('.prof-view-mode-btn').forEach(b => {
       if (b.dataset.mode === mode) {
         b.classList.add('active');
@@ -1216,7 +1227,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderProfessionalTable();
   };
 
-  window.claimCaseForCurrentProf = (caseId) => {
+  window.claimCaseForCurrentProf = async (caseId) => {
     const currentProf = state.currentUser;
     if (!currentProf || currentProf.role !== 'professional') {
       showToast('Debes ser un profesional para tomar un caso.', 'warning');
@@ -1226,6 +1237,14 @@ document.addEventListener('DOMContentLoaded', () => {
       window.PuenteDB.cases.claim(caseId, currentProf.name, currentProf.email);
       state.cases = window.PuenteDB.cases.getAll();
     }
+    try {
+      await fetch('/api/casos?action=claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caseId, profName: currentProf.name, profEmail: currentProf.email })
+      });
+    } catch (e) {}
+
     state.profViewMode = 'assigned';
     renderProfessionalTable();
     showToast(`¡Caso ${caseId} asignado a tu gestión exitosamente!`, 'success');
@@ -2049,8 +2068,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // FILTRADO ESTRICTO E INDEPENDIENTE: Cada profesional solo ve los casos que le fueron asignados a él
     const myAssignedCases = state.cases.filter(c => isCaseAssignedToProf(c, currentProf));
 
-    // Casos sin asignar en la red ODS 16
-    const unassignedCases = state.cases.filter(c => !c.assignedTo || c.assignedTo === 'Por asignar' || c.assignedTo === 'Sin asignar');
+    // Casos sin asignar en la red ODS 16 (Detección rigurosa y completa)
+    const unassignedCases = state.cases.filter(c => {
+      if (!c) return false;
+      const assigned = (c.assignedTo || c.profesional_asignado || '').trim().toLowerCase();
+      return !assigned || assigned === 'por asignar' || assigned === 'sin asignar' || assigned === 'null' || assigned === 'undefined';
+    });
+
+    // Actualizar encabezado dinámico según modo
+    const profTableHeading = document.getElementById('profTableHeading');
+    if (profTableHeading) {
+      if (state.profViewMode === 'unassigned') {
+        profTableHeading.innerHTML = `<i class="fas fa-inbox" style="color: var(--accent-turquoise);"></i> Casos Sin Asignar (${unassignedCases.length})`;
+      } else {
+        profTableHeading.innerHTML = `<i class="fas fa-list-check" style="color: var(--accent-turquoise);"></i> Casos Asignados (${myAssignedCases.length})`;
+      }
+    }
+
+    // Actualizar botones de modo con contador de badge en vivo
+    document.querySelectorAll('.prof-view-mode-btn').forEach(b => {
+      if (b.dataset.mode === state.profViewMode) {
+        b.classList.add('active');
+      } else {
+        b.classList.remove('active');
+      }
+      if (b.dataset.mode === 'unassigned') {
+        b.innerHTML = `<i class="fas fa-inbox"></i> Casos Sin Asignar <span class="badge" style="background: ${unassignedCases.length > 0 ? 'var(--accent-turquoise)' : '#94a3b8'}; color: white; border-radius: 9999px; padding: 2px 7px; font-size: 0.75rem; margin-left: 5px;">${unassignedCases.length}</span>`;
+      }
+    });
 
     // Métricas en tiempo real únicas para este profesional
     const pendingCount = myAssignedCases.filter(c => c.status === 'Pendiente').length;
@@ -2826,8 +2871,9 @@ document.addEventListener('DOMContentLoaded', () => {
         type: state.wizard.category,
         subType: state.wizard.subCategory,
         description: state.wizard.description,
-        status: 'En curso',
-        assignedTo: 'Dra. Elena Gómez',
+        status: 'Pendiente', // Estado inicial correcto: Pendiente
+        assignedTo: 'Por asignar', // Sin asignar para que aparezca en bandeja de profesionales
+        assignedToEmail: '',
         date: new Date().toISOString().split('T')[0],
         institution: targetInst,
         instAddress: instInfo.address,
@@ -2849,17 +2895,18 @@ document.addEventListener('DOMContentLoaded', () => {
       matchingContent.innerHTML = `
         <div class="match-result-box">
           <div style="width: 52px; height: 52px; border-radius: 50%; background: #10b981; color: #fff; margin: 0 auto 0.75rem; display: flex; align-items: center; justify-content: center; font-size: 1.6rem;"><i class="fas fa-check"></i></div>
-          <h3 style="color: #065f46; margin-bottom: 0.25rem;">¡Orientación Conectada!</h3>
-          <p style="font-size: 0.95rem; color: #047857; margin-bottom: 1rem;">Caso radicado con código <strong>${newCaseId}</strong></p>
+          <h3 style="color: #065f46; margin-bottom: 0.25rem;">¡Situación Radicada Exitosamente!</h3>
+          <p style="font-size: 0.95rem; color: #047857; margin-bottom: 1rem;">Expediente registrado en la red ODS 16 con código <strong>${newCaseId}</strong></p>
           <div style="background: #ffffff; border: 1px solid #a7f3d0; border-radius: 8px; padding: 0.85rem; text-align: left; margin-bottom: 1rem; font-size: 0.88rem;">
-            <strong>Especialista:</strong> Dra. Elena Gómez (Registro #84920)<br>
-            <strong>Entidad oficial:</strong> ${targetInst}
+            <strong>Estado:</strong> <span class="status-badge status-pending" style="font-size: 0.78rem; padding: 2px 7px; border-radius: 4px;">Pendiente</span> (Disponible en casos sin asignar)<br>
+            <strong>Entidad competente:</strong> ${targetInst}<br>
+            <strong>Asignación:</strong> Un profesional orientador tomará tu caso a la brevedad.
           </div>
-          <button class="btn btn-turquoise" style="width: 100%; margin-bottom: 0.5rem;" onclick="document.getElementById('matchingModal').classList.remove('active'); window.setSession('citizen'); window.openVirtualRoom('${newCaseId}');">
-            <i class="fas fa-video"></i> Entrar a Sala Virtual con Dra. Elena
-          </button>
-          <button class="btn btn-outline" style="width: 100%;" onclick="document.getElementById('matchingModal').classList.remove('active'); window.openRoadmap('${newCaseId}');">
+          <button class="btn btn-turquoise" style="width: 100%; margin-bottom: 0.5rem;" onclick="document.getElementById('matchingModal').classList.remove('active'); window.setSession('citizen'); window.openRoadmap('${newCaseId}');">
             <i class="fas fa-file-contract"></i> Ver Hoja de Ruta Oficial
+          </button>
+          <button class="btn btn-outline" style="width: 100%;" onclick="document.getElementById('matchingModal').classList.remove('active'); window.setSession('citizen'); window.openVirtualRoom('${newCaseId}');">
+            <i class="fas fa-video"></i> Ir a Sala Virtual de Orientación
           </button>
         </div>
       `;

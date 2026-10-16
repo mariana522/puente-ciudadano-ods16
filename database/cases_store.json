@@ -1,0 +1,71 @@
+[
+  {
+    "id": "CAS-00138",
+    "citizen": "Mariana Sibaja",
+    "citizenEmail": "mariana.sibaja@ejemplo.com",
+    "type": "Problema laboral",
+    "subType": "Despido injustificado sin liquidación",
+    "description": "Despido injustificado sin liquidación de prestaciones sociales ni entrega de certificado laboral.",
+    "status": "En curso",
+    "assignedTo": "Dra. Elena Gómez",
+    "assignedToEmail": "elena.gomez@asesores.org",
+    "date": "2026-09-20",
+    "institution": "Inspección del Trabajo",
+    "instAddress": "Calle 28 # 4-50, Sede Central MinTrabajo",
+    "instPhone": "Línea Gratuita Nacional 01 8000 112518",
+    "instHours": "Lunes a Viernes 8:00 am - 4:00 pm",
+    "checklist": [
+      "Copia de cédula de ciudadanía del trabajador",
+      "Contrato de trabajo o desprendibles de pago / extractos",
+      "Carta de despido laboral o constancia de retiro",
+      "Liquidación preliminar elaborada en la plataforma"
+    ],
+    "observations": "Se inició sesión de orientación virtual y se redactó borrador de solicitud de conciliación laboral."
+  },
+  {
+    "id": "CAS-00139",
+    "citizen": "Carlos Rodríguez",
+    "citizenEmail": "carlos.rodriguez@ejemplo.com",
+    "type": "Derechos ciudadanos",
+    "subType": "Falta de respuesta a petición oficial",
+    "description": "Demora superior a 30 días hábiles en respuesta de petición oficial ante la administración municipal.",
+    "status": "Pendiente",
+    "assignedTo": "Por asignar",
+    "assignedToEmail": "",
+    "date": "2026-09-21",
+    "institution": "Personería Municipal",
+    "instAddress": "Palacio Municipal, Carrera 3 # 12-20",
+    "instPhone": "(604) 789 2020 Ext. 104",
+    "instHours": "Lunes a Viernes 7:30 am - 12:00 m / 1:30 pm - 5:00 pm",
+    "checklist": [
+      "Copia radicada del Derecho de Petición con sello de recibido",
+      "Copia del documento de identidad",
+      "Constancia de vencimiento de términos legales (15 o 30 días)",
+      "Borrador de Acción de Tutela por violación al Derecho de Petición"
+    ],
+    "observations": ""
+  },
+  {
+    "id": "CAS-00140",
+    "citizen": "Lucía Fernández",
+    "citizenEmail": "lucia.fernandez@ejemplo.com",
+    "type": "Familia",
+    "subType": "Fijación de cuota alimentaria",
+    "description": "Incumplimiento reiterado de acuerdo verbal para el sostenimiento de dos menores de edad.",
+    "status": "Finalizado",
+    "assignedTo": "Dr. Mauricio Padilla",
+    "assignedToEmail": "mauricio.padilla@asesores.org",
+    "date": "2026-09-18",
+    "institution": "Comisaría de Familia",
+    "instAddress": "Calle 14 # 8-32, Barrio Centro",
+    "instPhone": "(604) 791 4500",
+    "instHours": "Lunes a Viernes 8:00 am - 5:00 pm",
+    "checklist": [
+      "Registro Civil de Nacimiento de los menores",
+      "Copia de cédula de la madre o solicitante",
+      "Relación aproximada de gastos mensuales de los hijos",
+      "Copia de citación previa o acuerdo de conciliación extrajudicial"
+    ],
+    "observations": "Audiencia de conciliación culminada con acta de acuerdo formalmente suscrita."
+  }
+]
