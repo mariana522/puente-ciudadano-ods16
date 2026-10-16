@@ -175,8 +175,10 @@ if ($hasValidKey) {
 }
 
 // 3. Fallback automático y libre a Jitsi Meet (Sin requerimiento de tarjeta ni costo)
-$jitsiRoomName = 'puente-ciudadano-caso-' . $cleanCaseId;
-$roomUrl = "https://{$jitsiDomain}/{$jitsiRoomName}";
+$hashToken = substr(md5($cleanCaseId), 0, 8);
+$jitsiRoomName = 'puente-ciudadano-caso-' . $cleanCaseId . '-' . $hashToken;
+$configHash = '#config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.enableLobby=false&config.enableLobbyChat=false&config.lobby.autoKnock=false&config.requireDisplayName=false&config.disableLobbyPassword=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.disableDeepLinking=true&interfaceConfig.LOBBY_SECTION_ENABLED=false&interfaceConfig.SHOW_JITSI_WATERMARK=false';
+$roomUrl = "https://{$jitsiDomain}/{$jitsiRoomName}{$configHash}";
 saveRoomToCase($caseId, $roomUrl);
 
 echo json_encode([

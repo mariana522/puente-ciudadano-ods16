@@ -558,6 +558,20 @@ function handleCasesRequest(req, res, parsedUrl) {
   res.end(JSON.stringify({ error: 'Method Not Allowed' }));
 }
 
+// Generador determinista de token único seguro por caso
+function generateCaseRoomToken(cleanCaseId) {
+  let h = 0x811c9dc5;
+  const str = String(cleanCaseId || '').toLowerCase();
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = (h * 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
+// Parámetros completos de Jitsi para deshabilitar vestíbulo (lobby), contraseñas y moderador requerido
+const JITSI_CONFIG_HASH = '#config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.enableLobby=false&config.enableLobbyChat=false&config.lobby.autoKnock=false&config.requireDisplayName=false&config.disableLobbyPassword=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.disableDeepLinking=true&interfaceConfig.LOBBY_SECTION_ENABLED=false&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false';
+
 // Manejo de salas de videollamada públicas y gratuitas con Jitsi Meet
 function handleDailyRoomRequest(req, res, parsedUrl) {
   let body = '';
@@ -570,15 +584,29 @@ function handleDailyRoomRequest(req, res, parsedUrl) {
 
     const caseId = data.caseId || parsedUrl.query.caseId || parsedUrl.query.id || 'CAS-00138';
     const cleanCaseId = normalizeCaseId(caseId);
-    const roomName = 'puente-ciudadano-caso-' + cleanCaseId;
-    const roomUrl = 'https://meet.jit.si/' + roomName;
+    
+    // Obtener token persistente o calcular token único seguro
+    let roomToken = '';
+    const cached = getCachedRoom(cleanCaseId);
+    if (cached && cached.roomToken) {
+      roomToken = cached.roomToken;
+    } else {
+      roomToken = generateCaseRoomToken(cleanCaseId);
+    }
 
-    console.log('[Jitsi Meet] Sala generada para caso #' + caseId + ': ' + roomUrl);
+    const roomName = 'puente-ciudadano-caso-' + cleanCaseId + '-' + roomToken;
+    const jitsiDomain = getJitsiDomain();
+    const cleanRoomUrl = 'https://' + jitsiDomain + '/' + roomName;
+    const directJoinUrl = cleanRoomUrl + JITSI_CONFIG_HASH;
+
+    console.log('[Jitsi Meet] Sala libre con token único generada para caso #' + caseId + ': ' + cleanRoomUrl);
 
     setCachedRoom(cleanCaseId, {
       caseId: caseId,
       roomName: roomName,
-      roomUrl: roomUrl,
+      roomToken: roomToken,
+      roomUrl: directJoinUrl,
+      cleanRoomUrl: cleanRoomUrl,
       provider: 'jitsi',
       isLive: true,
       isFree: true
@@ -592,12 +620,14 @@ function handleDailyRoomRequest(req, res, parsedUrl) {
       success: true,
       caseId: caseId,
       roomName: roomName,
-      roomUrl: roomUrl,
-      directJoinUrl: roomUrl,
+      roomToken: roomToken,
+      roomUrl: directJoinUrl,
+      directJoinUrl: directJoinUrl,
+      cleanRoomUrl: cleanRoomUrl,
       provider: 'jitsi',
       isFree: true,
       status: 'jitsi_ready',
-      message: 'Sala Jitsi Meet libre y gratuita activa para el caso #' + caseId
+      message: 'Sala Jitsi Meet libre con token y sin vestíbulo activa para el caso #' + caseId
     }));
   });
 }

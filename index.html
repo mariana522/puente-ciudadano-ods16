@@ -27,6 +27,10 @@
         const base = this.getServerUrl();
         const cleanEndpoint = String(endpoint || '').replace(/^\/+/, '');
         return base + '/' + cleanEndpoint;
+      },
+      getJitsiDomain: function() {
+        if (window.JITSI_DOMAIN) return window.JITSI_DOMAIN.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        return 'meet.jit.si';
       }
     };
     window.SOCKET_URL = window.PUENTE_CONFIG.getServerUrl();

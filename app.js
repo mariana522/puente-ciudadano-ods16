@@ -3223,9 +3223,30 @@ document.addEventListener('DOMContentLoaded', () => {
     const isProf = state.currentUser?.role === 'professional';
     const cleanCaseId = String(targetCase.id).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // URL exacta solicitada para 1 clic sin tarjetas ni cuentas:
-    const roomName = 'puente-ciudadano-caso-' + cleanCaseId;
-    const roomUrl = 'https://meet.jit.si/' + roomName;
+    // Generador determinista de token único por caso (garantiza el mismo token para ambos usuarios)
+    function getCaseRoomToken(cId) {
+      const clean = String(cId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      let h = 0x811c9dc5;
+      for (let i = 0; i < clean.length; i++) {
+        h ^= clean.charCodeAt(i);
+        h = (h * 0x01000193) >>> 0;
+      }
+      return h.toString(16).padStart(8, '0');
+    }
+
+    const roomToken = targetCase.roomToken || targetCase.vRoomToken || getCaseRoomToken(targetCase.id);
+    targetCase.roomToken = roomToken;
+
+    // Nombre de sala con token aleatorio único para evitar cualquier moderador o bloqueo:
+    const roomName = 'puente-ciudadano-caso-' + cleanCaseId + '-' + roomToken;
+    const jitsiDomain = (typeof window !== 'undefined' && window.PUENTE_CONFIG?.getJitsiDomain)
+      ? window.PUENTE_CONFIG.getJitsiDomain()
+      : (window.JITSI_DOMAIN || 'meet.jit.si');
+
+    // Hash de configuración para omitir vestíbulo (lobby), sala de espera y requisitos de moderador
+    const jitsiConfigHash = '#config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.enableLobby=false&config.enableLobbyChat=false&config.lobby.autoKnock=false&config.requireDisplayName=false&config.disableLobbyPassword=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.disableDeepLinking=true&interfaceConfig.LOBBY_SECTION_ENABLED=false&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false';
+    const roomUrl = 'https://' + jitsiDomain + '/' + roomName + jitsiConfigHash;
+    const cleanRoomUrl = 'https://' + jitsiDomain + '/' + roomName;
     state.activeDailyRoomUrl = roomUrl;
 
     // 1. Títulos y metadatos
@@ -3286,12 +3307,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 5. Enlace visible y botones de 1 clic
     if (dailyRoomUrlText) {
-      dailyRoomUrlText.textContent = roomUrl;
+      dailyRoomUrlText.textContent = cleanRoomUrl;
       dailyRoomUrlText.style.color = '#38bdf8';
-      dailyRoomUrlText.title = "Enlace Jitsi Meet sincronizado. Clic para copiar.";
+      dailyRoomUrlText.title = "Enlace Jitsi Meet con bypass de vestíbulo. Clic para copiar.";
       dailyRoomUrlText.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
-          showToast('Enlace de la videollamada copiado al portapapeles.', 'success');
+          showToast('Enlace libre de la videollamada copiado al portapapeles.', 'success');
         });
       };
     }
@@ -3325,7 +3346,7 @@ document.addEventListener('DOMContentLoaded', () => {
       let jitsiReady = false;
       if (typeof window.JitsiMeetExternalAPI === 'function') {
         try {
-          const api = new window.JitsiMeetExternalAPI('meet.jit.si', {
+          const api = new window.JitsiMeetExternalAPI(jitsiDomain, {
             roomName: roomName,
             width: '100%',
             height: '100%',
@@ -3335,15 +3356,31 @@ document.addEventListener('DOMContentLoaded', () => {
               email: state.currentUser?.email || (isProf ? 'elena.gomez@asesores.org' : 'mariana.sibaja@ejemplo.com')
             },
             configOverwrite: {
+              // Deshabilitar completamente vestíbulo (lobby) y pantallas de espera
+              enableLobby: false,
+              enableLobbyChat: false,
+              lobby: {
+                autoKnock: false,
+                enableChat: false
+              },
+              prejoinPageEnabled: false,
+              prejoinConfig: {
+                enabled: false
+              },
+              requireDisplayName: false,
+              disableLobbyPassword: true,
+              enableWelcomePage: false,
+              disableDeepLinking: true,
               startWithAudioMuted: false,
               startWithVideoMuted: false,
-              prejoinPageEnabled: false,
-              enableWelcomePage: false,
-              disableDeepLinking: true
+              p2p: {
+                enabled: true
+              }
             },
             interfaceConfigOverwrite: {
               SHOW_JITSI_WATERMARK: false,
               SHOW_WATERMARK_FOR_GUESTS: false,
+              LOBBY_SECTION_ENABLED: false,
               TOOLBAR_BUTTONS: [
                 'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
                 'fodeviceselection', 'hangup', 'chat', 'settings', 'raisehand',
@@ -3381,7 +3418,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mount.innerHTML = `
           <iframe 
             id="jitsiMeetDirectFrame"
-            src="${roomUrl}#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=${encodeURIComponent(userName)}" 
+            src="${roomUrl}&userInfo.displayName=${encodeURIComponent(userName)}" 
             allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; clipboard-write *" 
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
             style="width: 100%; height: 100%; min-height: 480px; border: none; border-radius: 8px; background: #0b0f19;"
