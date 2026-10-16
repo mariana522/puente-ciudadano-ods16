@@ -3,10 +3,9 @@
  * SERVIDOR PRINCIPAL BACKEND & WEBSOCKETS (RENDER / CLOUD PRODUCTION)
  * Plataforma ODS 16 - Puente de Orientación Ciudadana
  * ==============================================================================
- * Archivo de inicio del servidor para despliegue en Render, Railway o local.
  * - Servidor HTTP: API REST y Archivos estáticos (index.html, app.js, db.js, assets)
  * - Servidor WebSockets: Socket.io con persistencia en disco y WebRTC signaling
- * - Integración Daily.co: Sincronización idéntica de salas por caso para Ciudadano y Profesional
+ * - Integración Daily.co: API REST oficial (api.daily.co/v1/rooms) con clave privada
  * ==============================================================================
  */
 
@@ -19,11 +18,9 @@ const url = require('url');
 const { Server } = require('socket.io');
 
 const PORT = process.env.PORT || process.env.CHAT_PORT || 3001;
-const DAILY_API_KEY = process.env.DAILY_API_KEY || '';
-const DAILY_DOMAIN = process.env.DAILY_DOMAIN || 'puente-ciudadano.daily.co';
 const DAILY_EXP_HOURS = parseInt(process.env.DAILY_ROOM_EXPIRATION_HOURS || '24', 10);
 
-// Asegurar directorio de base de datos persistente en disco
+// Asegurar directorio de base de datos persistente
 const DB_DIR = path.join(__dirname, 'database');
 if (!fs.existsSync(DB_DIR)) {
   try { fs.mkdirSync(DB_DIR, { recursive: true }); } catch (e) {}
@@ -32,7 +29,7 @@ if (!fs.existsSync(DB_DIR)) {
 const MESSAGES_FILE = path.join(DB_DIR, 'messages_store.json');
 const ROOMS_FILE = path.join(DB_DIR, 'rooms_store.json');
 
-// Normalizador estándar de identificadores de caso (elimina caracteres especiales y espacios)
+// Normalizador estándar de identificadores de caso
 function normalizeCaseId(caseId) {
   if (!caseId) return 'cas00138';
   return String(caseId).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -42,7 +39,20 @@ function getRoomName(caseId) {
   return 'case_' + normalizeCaseId(caseId);
 }
 
-// Semilla inicial de mensajes por caso para arranque limpio
+// Lectura dinámica y rigurosa de DAILY_API_KEY
+function getDailyApiKey() {
+  const rawKey = process.env.DAILY_API_KEY || process.env.DAILY_KEY || process.env.VITE_DAILY_API_KEY || '';
+  return String(rawKey).replace(/^["']|["']$/g, '').trim();
+}
+
+function isValidDailyKey(key) {
+  if (!key) return false;
+  const lower = key.toLowerCase();
+  if (lower === 'tu_daily_api_key_aqui' || lower === 'your_daily_api_key_here') return false;
+  return key.length >= 20;
+}
+
+// Semilla inicial si no existe archivo de mensajes
 const DEFAULT_SEED_MESSAGES = {
   'cas00138': [
     {
@@ -136,7 +146,6 @@ const DEFAULT_SEED_MESSAGES = {
   ]
 };
 
-// Carga y guardado de persistencia de mensajes
 function loadMessagesStore() {
   try {
     if (fs.existsSync(MESSAGES_FILE)) {
@@ -193,7 +202,7 @@ function persistMessage(caseId, msgData) {
   return record;
 }
 
-// Carga y guardado persistente de salas Daily.co
+// Almacén de salas Daily.co
 function loadRoomsStore() {
   try {
     if (fs.existsSync(ROOMS_FILE)) {
@@ -235,73 +244,230 @@ function setCachedRoom(cleanCaseId, roomData) {
   saveRoomsStore(store);
 }
 
-const MIME_TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.webp': 'image/webp',
-  '.sql': 'text/plain; charset=utf-8',
-  '.md': 'text/markdown; charset=utf-8'
-};
+// Manejo de la provisión de salas Daily.co (API REST Oficial api.daily.co/v1/rooms)
+function handleDailyRoomRequest(req, res, parsedUrl) {
+  let body = '';
+  req.on('data', chunk => { body += chunk; });
+  req.on('end', () => {
+    let data = {};
+    try {
+      if (body) data = JSON.parse(body);
+    } catch (e) {}
 
-// Crear servidor HTTP
-const server = http.createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Email, X-User-Role, X-User-Name, X-Requested-With');
+    const caseId = data.caseId || parsedUrl.query.caseId || parsedUrl.query.id || 'CAS-00138';
+    const cleanCaseId = normalizeCaseId(caseId);
+    const roomName = 'puente-' + cleanCaseId;
+    const durationMins = parseInt(data.durationMinutes || parsedUrl.query.durationMinutes || (DAILY_EXP_HOURS * 60), 10);
+    const expTimestamp = Math.floor(Date.now() / 1000) + (durationMins * 60);
 
-  if (req.method === 'OPTIONS') {
-    res.writeHead(200);
-    res.end();
-    return;
-  }
+    const apiKey = getDailyApiKey();
 
-  const parsedUrl = url.parse(req.url, true);
-  const pathname = parsedUrl.pathname;
+    console.log('================================================================');
+    console.log('[Daily.co] Solicitud de sala para caso #' + caseId + ' (Nombre: ' + roomName + ')');
+    console.log('[Daily.co] Estado de DAILY_API_KEY: ' + (apiKey ? ('DETECTADA (' + apiKey.substring(0, 6) + '...' + apiKey.substring(apiKey.length - 4) + ', longitud: ' + apiKey.length + ')') : 'NO CONFIGURADA / VACÍA'));
+    console.log('================================================================');
 
-  // 1. Healthcheck
-  if (pathname === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    // 1. Verificar si ya existe una sala REAL de Daily.co en caché para este caso
+    const cached = getCachedRoom(cleanCaseId);
+    if (cached && cached.roomUrl && cached.isLive) {
+      console.log('[Daily.co SUCCESS] Reutilizando sala real ya creada para caso #' + caseId + ': ' + cached.roomUrl);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        caseId: caseId,
+        roomName: cached.roomName || roomName,
+        roomUrl: cached.roomUrl,
+        provider: 'daily.co',
+        status: 'synchronized_live',
+        isLive: true,
+        message: 'Sala Daily.co sincronizada para el caso #' + caseId
+      }));
+      return;
+    }
+
+    // 2. Si la clave no está configurada o es inválida, lanzar error claro en logs y responder HTTP 500 (SIN salas locales falsas)
+    if (!isValidDailyKey(apiKey)) {
+      console.error('----------------------------------------------------------------');
+      console.error('[Daily.co ERROR CRÍTICO] DAILY_API_KEY no encontrada o inválida en las variables de entorno de Render.');
+      console.error('[Daily.co ERROR CRÍTICO] Valor actual: "' + apiKey + '"');
+      console.error('[Daily.co ERROR CRÍTICO] ACCIÓN REQUERIDA: Ve a Render Dashboard -> Tu Servicio -> Environment y agrega DAILY_API_KEY.');
+      console.error('----------------------------------------------------------------');
+
+      res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: 'DAILY_API_KEY_MISSING',
+        message: 'La variable de entorno DAILY_API_KEY no está configurada en Render o tiene un valor por defecto.',
+        hint: 'Ve a tu Render Dashboard -> Selecciona tu Servicio -> Pestaña Environment -> Agrega la variable DAILY_API_KEY con tu clave de https://dashboard.daily.co/developers',
+        detectedKeyLength: apiKey ? apiKey.length : 0
+      }));
+      return;
+    }
+
+    // 3. Crear sala real en Daily.co vía POST https://api.daily.co/v1/rooms
+    const payload = JSON.stringify({
+      name: roomName,
+      privacy: 'public',
+      properties: {
+        exp: expTimestamp,
+        enable_chat: true,
+        enable_screenshare: true,
+        enable_knocking: false,
+        start_video_off: false,
+        start_audio_off: false,
+        eject_at_room_exp: true,
+        lang: 'es'
+      }
+    });
+
+    const options = {
+      hostname: 'api.daily.co',
+      port: 443,
+      path: '/v1/rooms',
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + apiKey,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload)
+      }
+    };
+
+    console.log('[Daily.co] Enviando POST https://api.daily.co/v1/rooms para crear sala "' + roomName + '"...');
+
+    const dailyReq = https.request(options, (dailyRes) => {
+      let respData = '';
+      dailyRes.on('data', chunk => { respData += chunk; });
+      dailyRes.on('end', () => {
+        let parsed = {};
+        try { parsed = JSON.parse(respData); } catch (e) {}
+
+        // Caso A: Sala creada exitosamente en vivo (HTTP 200)
+        if (dailyRes.statusCode === 200 && parsed.url) {
+          console.log('[Daily.co SUCCESS] ¡Sala oficial creada en Daily.co!: ' + parsed.url);
+          setCachedRoom(cleanCaseId, {
+            caseId: caseId,
+            roomName: parsed.name || roomName,
+            roomUrl: parsed.url,
+            isLive: true,
+            exp: expTimestamp
+          });
+
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+          res.end(JSON.stringify({
+            success: true,
+            caseId: caseId,
+            roomName: parsed.name || roomName,
+            roomUrl: parsed.url,
+            provider: 'daily.co',
+            status: 'created_live',
+            isLive: true,
+            message: 'Sala Daily.co aprovisionada en vivo para el caso #' + caseId
+          }));
+          return;
+        }
+
+        // Caso B: La sala ya existía en Daily.co (HTTP 400 "already exists")
+        if (dailyRes.statusCode === 400 && respData.includes('already exists')) {
+          console.log('[Daily.co INFO] La sala "' + roomName + '" ya existe en Daily.co. Obteniendo URL canónica vía GET /v1/rooms/' + roomName + '...');
+          fetchExistingDailyRoom(apiKey, roomName, cleanCaseId, caseId, expTimestamp, res);
+          return;
+        }
+
+        // Caso C: Error de la API de Daily.co
+        console.error('[Daily.co ERROR] Error devuelto por la API de Daily.co (HTTP ' + dailyRes.statusCode + '):', respData);
+        res.writeHead(dailyRes.statusCode || 502, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: false,
+          error: 'DAILY_API_ERROR',
+          statusCode: dailyRes.statusCode,
+          details: parsed,
+          message: 'Error devuelto por la API de Daily.co (HTTP ' + dailyRes.statusCode + '): ' + (parsed.info || parsed.error || respData)
+        }));
+      });
+    });
+
+    dailyReq.on('error', (err) => {
+      console.error('[Daily.co ERROR] Error de red al comunicarse con api.daily.co:', err.message);
+      res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: 'DAILY_NETWORK_ERROR',
+        message: 'No se pudo conectar con la API de Daily.co: ' + err.message
+      }));
+    });
+
+    dailyReq.write(payload);
+    dailyReq.end();
+  });
+}
+
+// Consultar sala existente en Daily.co para obtener su URL canónica oficial
+function fetchExistingDailyRoom(apiKey, roomName, cleanCaseId, caseId, expTimestamp, res) {
+  const options = {
+    hostname: 'api.daily.co',
+    port: 443,
+    path: '/v1/rooms/' + encodeURIComponent(roomName),
+    method: 'GET',
+    headers: {
+      'Authorization': 'Bearer ' + apiKey
+    }
+  };
+
+  const getReq = https.request(options, (getRes) => {
+    let raw = '';
+    getRes.on('data', chunk => { raw += chunk; });
+    getRes.on('end', () => {
+      let parsed = {};
+      try { parsed = JSON.parse(raw); } catch (e) {}
+
+      if (getRes.statusCode === 200 && parsed.url) {
+        console.log('[Daily.co SUCCESS] URL canónica recuperada de Daily.co: ' + parsed.url);
+        setCachedRoom(cleanCaseId, {
+          caseId: caseId,
+          roomName: parsed.name || roomName,
+          roomUrl: parsed.url,
+          isLive: true,
+          exp: parsed.properties?.exp || expTimestamp
+        });
+
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: true,
+          caseId: caseId,
+          roomName: parsed.name || roomName,
+          roomUrl: parsed.url,
+          provider: 'daily.co',
+          status: 'existing_live',
+          isLive: true,
+          message: 'Sala existente sincronizada para el caso #' + caseId
+        }));
+        return;
+      }
+
+      console.error('[Daily.co ERROR] No se pudo obtener la sala existente "' + roomName + '" (HTTP ' + getRes.statusCode + '):', raw);
+      res.writeHead(getRes.statusCode || 502, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: 'DAILY_ROOM_FETCH_FAILED',
+        statusCode: getRes.statusCode,
+        details: parsed,
+        message: 'No se pudo obtener la sala existente en Daily.co: ' + (parsed.info || parsed.error || raw)
+      }));
+    });
+  });
+
+  getReq.on('error', (err) => {
+    console.error('[Daily.co ERROR] Error al consultar sala existente en api.daily.co:', err.message);
+    res.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify({
-      status: 'ok',
-      service: 'Puente Ciudadano ODS 16 Backend & Realtime Sockets',
-      port: PORT,
-      timestamp: new Date().toISOString(),
-      roomsCount: io.sockets.adapter.rooms.size
+      success: false,
+      error: 'DAILY_NETWORK_ERROR',
+      message: 'Error al consultar sala existente en Daily.co: ' + err.message
     }));
-    return;
-  }
+  });
 
-  // 2. API de Mensajes REST (persistencia para ambos usuarios)
-  if (
-    pathname === '/api/mensajes' ||
-    pathname === '/api/messages' ||
-    pathname === '/backend/mensajes.php' ||
-    pathname === '/api/mensajes.php'
-  ) {
-    handleMessagesRequest(req, res, parsedUrl);
-    return;
-  }
-
-  // 3. Endpoint API de Videollamadas Daily.co
-  if (
-    pathname === '/api/daily_room' ||
-    pathname === '/backend/daily_room.php' ||
-    pathname === '/api/daily_room.php'
-  ) {
-    handleDailyRoomRequest(req, res, parsedUrl);
-    return;
-  }
-
-  // 4. Servir archivos estáticos del frontend
-  serveStaticFile(req, res, pathname);
-});
+  getReq.end();
+}
 
 // Manejo de peticiones de mensajes REST
 function handleMessagesRequest(req, res, parsedUrl) {
@@ -363,223 +529,20 @@ function handleMessagesRequest(req, res, parsedUrl) {
   res.end(JSON.stringify({ error: 'Method Not Allowed' }));
 }
 
-// Manejo de la provisión de salas Daily.co
-function handleDailyRoomRequest(req, res, parsedUrl) {
-  let body = '';
-  req.on('data', chunk => { body += chunk; });
-  req.on('end', () => {
-    let data = {};
-    try {
-      if (body) data = JSON.parse(body);
-    } catch (e) {}
-
-    const caseId = data.caseId || parsedUrl.query.caseId || parsedUrl.query.id || 'CAS-00138';
-    const citizen = data.citizen || parsedUrl.query.citizen || 'Mariana Sibaja';
-    const professional = data.professional || parsedUrl.query.professional || 'Dra. Elena Gómez';
-    const durationMins = parseInt(data.durationMinutes || parsedUrl.query.durationMinutes || (DAILY_EXP_HOURS * 60), 10);
-
-    const cleanCaseId = normalizeCaseId(caseId);
-    const roomName = 'puente-' + cleanCaseId;
-    const expTimestamp = Math.floor(Date.now() / 1000) + (durationMins * 60);
-
-    // 1. REVISAR SI YA EXISTE SALA GENERADA PARA ESTE CASO (Garantiza URL idéntica para Ciudadano y Profesional)
-    const cached = getCachedRoom(cleanCaseId);
-    if (cached && cached.roomUrl) {
-      console.log('[Daily.co] Sala sincronizada existente devuelta para caso #' + caseId + ': ' + cached.roomUrl);
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
-        success: true,
-        caseId: caseId,
-        roomName: cached.roomName || roomName,
-        roomUrl: cached.roomUrl,
-        provider: 'daily.co',
-        status: 'synchronized',
-        isLive: true,
-        message: 'Sala Daily.co sincronizada para el caso #' + caseId
-      }));
-      return;
-    }
-
-    const hasValidKey = DAILY_API_KEY && DAILY_API_KEY !== 'tu_daily_api_key_aqui' && DAILY_API_KEY.length > 10;
-
-    if (hasValidKey) {
-      const payload = JSON.stringify({
-        name: roomName,
-        privacy: 'public',
-        properties: {
-          exp: expTimestamp,
-          enable_chat: true,
-          enable_screenshare: true,
-          enable_knocking: false,
-          start_video_off: false,
-          start_audio_off: false,
-          eject_at_room_exp: true,
-          lang: 'es'
-        }
-      });
-
-      const options = {
-        hostname: 'api.daily.co',
-        port: 443,
-        path: '/v1/rooms',
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + DAILY_API_KEY,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(payload)
-        }
-      };
-
-      const dailyReq = https.request(options, (dailyRes) => {
-        let respData = '';
-        dailyRes.on('data', chunk => { respData += chunk; });
-        dailyRes.on('end', () => {
-          let parsed = {};
-          try { parsed = JSON.parse(respData); } catch (e) {}
-
-          // Si se creó con éxito (200)
-          if (dailyRes.statusCode === 200 && parsed.url) {
-            setCachedRoom(cleanCaseId, {
-              caseId: caseId,
-              roomName: parsed.name || roomName,
-              roomUrl: parsed.url,
-              exp: expTimestamp
-            });
-
-            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-            res.end(JSON.stringify({
-              success: true,
-              caseId: caseId,
-              roomName: parsed.name || roomName,
-              roomUrl: parsed.url,
-              provider: 'daily.co',
-              status: 'created_live',
-              isLive: true,
-              message: 'Sala Daily.co aprovisionada en vivo para el caso #' + caseId
-            }));
-            return;
-          }
-
-          // Si ya existía (400 already exists), consultar los detalles para obtener la URL original exacta
-          if (dailyRes.statusCode === 400 && respData.includes('already exists')) {
-            fetchExistingDailyRoom(roomName, cleanCaseId, caseId, expTimestamp, res, citizen, professional, durationMins);
-            return;
-          }
-
-          // Fallback resiliente si API responde otro error
-          const fallbackUrl = parsed.url || ('https://' + DAILY_DOMAIN + '/' + roomName);
-          setCachedRoom(cleanCaseId, {
-            caseId: caseId,
-            roomName: roomName,
-            roomUrl: fallbackUrl,
-            exp: expTimestamp
-          });
-
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-          res.end(JSON.stringify({
-            success: true,
-            caseId: caseId,
-            roomName: roomName,
-            roomUrl: fallbackUrl,
-            provider: 'daily.co',
-            status: 'fallback_live',
-            isLive: true,
-            message: 'Sala Daily.co asignada para el caso #' + caseId
-          }));
-        });
-      });
-
-      dailyReq.on('error', (e) => {
-        console.warn('[Daily.co] Error al contactar api.daily.co:', e.message);
-        respondWithConsistentRoom(res, cleanCaseId, caseId, roomName, citizen, professional, durationMins);
-      });
-
-      dailyReq.write(payload);
-      dailyReq.end();
-      return;
-    }
-
-    // Modo Sin API Key o Fallback resiliente
-    respondWithConsistentRoom(res, cleanCaseId, caseId, roomName, citizen, professional, durationMins);
-  });
-}
-
-// Consultar sala existente en Daily.co para obtener su URL canónica
-function fetchExistingDailyRoom(roomName, cleanCaseId, caseId, expTimestamp, res, citizen, professional, durationMins) {
-  const options = {
-    hostname: 'api.daily.co',
-    port: 443,
-    path: '/v1/rooms/' + encodeURIComponent(roomName),
-    method: 'GET',
-    headers: {
-      'Authorization': 'Bearer ' + DAILY_API_KEY
-    }
-  };
-
-  const getReq = https.request(options, (getRes) => {
-    let raw = '';
-    getRes.on('data', chunk => { raw += chunk; });
-    getRes.on('end', () => {
-      let parsed = {};
-      try { parsed = JSON.parse(raw); } catch (e) {}
-
-      const roomUrl = parsed.url || ('https://' + DAILY_DOMAIN + '/' + roomName);
-      setCachedRoom(cleanCaseId, {
-        caseId: caseId,
-        roomName: roomName,
-        roomUrl: roomUrl,
-        exp: parsed.properties?.exp || expTimestamp
-      });
-
-      console.log('[Daily.co] Sala existente recuperada exitosamente para caso #' + caseId + ': ' + roomUrl);
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
-        success: true,
-        caseId: caseId,
-        roomName: roomName,
-        roomUrl: roomUrl,
-        provider: 'daily.co',
-        status: 'existing_live',
-        isLive: true,
-        message: 'Sala existente sincronizada para el caso #' + caseId
-      }));
-    });
-  });
-
-  getReq.on('error', () => {
-    respondWithConsistentRoom(res, cleanCaseId, caseId, roomName, citizen, professional, durationMins);
-  });
-
-  getReq.end();
-}
-
-function respondWithConsistentRoom(res, cleanCaseId, caseId, roomName, citizen, professional, durationMins) {
-  const roomUrl = 'https://' + DAILY_DOMAIN + '/' + roomName;
-  setCachedRoom(cleanCaseId, {
-    caseId: caseId,
-    roomName: roomName,
-    roomUrl: roomUrl,
-    exp: Math.floor(Date.now() / 1000) + (durationMins * 60)
-  });
-
-  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify({
-    success: true,
-    caseId: caseId,
-    roomName: roomName,
-    roomUrl: roomUrl,
-    provider: 'daily.co',
-    status: 'ready',
-    isSandbox: true,
-    config: {
-      domain: DAILY_DOMAIN,
-      citizen: citizen,
-      professional: professional,
-      expMinutes: durationMins
-    },
-    message: 'Sala Daily.co garantizada e idéntica para el caso #' + caseId + '.'
-  }));
-}
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+  '.sql': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8'
+};
 
 // Servir archivos estáticos
 function serveStaticFile(req, res, pathname) {
@@ -612,7 +575,60 @@ function serveStaticFile(req, res, pathname) {
   });
 }
 
-// Inicializar Socket.io sobre el mismo servidor HTTP (CORS total y transporte dual)
+// Crear servidor HTTP
+const server = http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-User-Email, X-User-Role, X-User-Name, X-Requested-With');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  const parsedUrl = url.parse(req.url, true);
+  const pathname = parsedUrl.pathname;
+
+  // 1. Healthcheck
+  if (pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      service: 'Puente Ciudadano ODS 16 Backend & Realtime Sockets',
+      port: PORT,
+      timestamp: new Date().toISOString(),
+      roomsCount: io.sockets.adapter.rooms.size
+    }));
+    return;
+  }
+
+  // 2. API de Mensajes REST
+  if (
+    pathname === '/api/mensajes' ||
+    pathname === '/api/messages' ||
+    pathname === '/backend/mensajes.php' ||
+    pathname === '/api/mensajes.php'
+  ) {
+    handleMessagesRequest(req, res, parsedUrl);
+    return;
+  }
+
+  // 3. Endpoint API de Videollamadas Daily.co
+  if (
+    pathname === '/api/daily_room' ||
+    pathname === '/backend/daily_room.php' ||
+    pathname === '/api/daily_room.php'
+  ) {
+    handleDailyRoomRequest(req, res, parsedUrl);
+    return;
+  }
+
+  // 4. Servir frontend estático
+  serveStaticFile(req, res, pathname);
+});
+
+// Inicializar Socket.io sobre el servidor HTTP
 const io = new Server(server, {
   cors: {
     origin: '*',
@@ -627,7 +643,6 @@ const io = new Server(server, {
 io.on('connection', (socket) => {
   console.log('[Socket.io] Cliente conectado: ' + socket.id + ' desde ' + socket.handshake.address);
 
-  // 1. Unirse a la sala de un caso específico
   socket.on('join_case', ({ caseId, user }) => {
     if (!caseId) return;
 
@@ -639,12 +654,10 @@ io.on('connection', (socket) => {
 
     console.log('[Socket.io] ' + (user?.name || socket.id) + ' (' + (user?.role || 'user') + ') se unió a la sala ' + roomName);
 
-    // Enviar historial de mensajes persistidos al usuario que se acaba de conectar
     const history = getMessagesForCase(caseId);
     socket.emit('case_history', history);
     socket.emit('load_messages', history);
 
-    // Notificar a los demás participantes en la sala
     socket.to(roomName).emit('user_joined', {
       user: user || { name: 'Participante', role: 'unknown' },
       caseId: caseId,
@@ -652,19 +665,15 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 2. Enviar mensaje en tiempo real (Persistencia en disco + Broadcast dual)
   const handleIncomingMessage = (msgData) => {
     const { caseId, text } = msgData || {};
     if (!caseId || !text) return;
 
     const roomName = getRoomName(caseId);
-
-    // Guardar en almacenamiento persistente no volátil
     const messageRecord = persistMessage(caseId, msgData);
 
     console.log('[Socket.io] Mensaje en ' + roomName + ' de ' + messageRecord.sender + ': "' + text.substring(0, 35) + '..."');
 
-    // Transmitir a TODOS los clientes conectados en la sala (emitiendo tanto receive_message como new_message)
     io.to(roomName).emit('receive_message', messageRecord);
     io.to(roomName).emit('new_message', messageRecord);
   };
@@ -672,7 +681,6 @@ io.on('connection', (socket) => {
   socket.on('send_message', handleIncomingMessage);
   socket.on('receive_message', handleIncomingMessage);
 
-  // 3. Indicador de escritura en vivo
   socket.on('typing', ({ caseId, user, isTyping }) => {
     if (!caseId) return;
     const roomName = getRoomName(caseId);
@@ -683,7 +691,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // 4. Salir de la sala
   socket.on('leave_case', ({ caseId }) => {
     const roomName = getRoomName(caseId || socket.activeCaseId);
     if (roomName) {
@@ -692,7 +699,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 5. Señalización WebRTC P2P (Para contingencia de videollamada directa entre navegadores)
   socket.on('webrtc_offer', ({ caseId, offer, sender }) => {
     const roomName = getRoomName(caseId);
     socket.to(roomName).emit('webrtc_offer', { caseId, offer, sender });
@@ -715,11 +721,18 @@ io.on('connection', (socket) => {
 
 // Iniciar escucha del servidor
 server.listen(PORT, () => {
+  const initKey = getDailyApiKey();
   console.log('================================================================');
   console.log('🚀 Servidor Puente Ciudadano ODS 16 activo en puerto ' + PORT);
   console.log('- Web & Frontend: http://localhost:' + PORT + '/');
   console.log('- Socket.io Realtime: http://localhost:' + PORT);
   console.log('- Healthcheck: http://localhost:' + PORT + '/health');
-  console.log('- Persistencia: ' + MESSAGES_FILE);
+  console.log('- Persistencia Mensajes: ' + MESSAGES_FILE);
+  if (isValidDailyKey(initKey)) {
+    console.log('- Daily.co API: Configurada (' + initKey.substring(0, 6) + '...' + initKey.substring(initKey.length - 4) + ')');
+  } else {
+    console.warn('- Daily.co API: [AVISO CRÍTICO] DAILY_API_KEY no configurada en variables de entorno.');
+    console.warn('  -> Ve a Render Dashboard -> Environment para agregar DAILY_API_KEY.');
+  }
   console.log('================================================================');
 });

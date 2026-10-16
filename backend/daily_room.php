@@ -157,24 +157,21 @@ if ($hasValidKey) {
     }
 }
 
-// Modo Sandbox / Fallback resiliente
-$demoRoomUrl = "https://{$dailyDomain}/{$roomName}";
-saveRoomToCase($caseId, $demoRoomUrl);
+if (!$hasValidKey) {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error'   => 'DAILY_API_KEY_MISSING',
+        'message' => 'La variable de entorno DAILY_API_KEY no está configurada o es el valor por defecto.',
+        'hint'    => 'Configura DAILY_API_KEY con tu clave de https://dashboard.daily.co/developers'
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit();
+}
 
+http_response_code(502);
 echo json_encode([
-    'success'     => true,
-    'caseId'      => $caseId,
-    'roomName'    => $roomName,
-    'roomUrl'     => $demoRoomUrl,
-    'provider'    => 'daily.co',
-    'status'      => 'ready',
-    'isSandbox'   => !$hasValidKey,
-    'config'      => [
-        'hasApiKey'    => $hasValidKey,
-        'domain'       => $dailyDomain,
-        'citizen'      => $citizen,
-        'professional' => $professional,
-        'expMinutes'   => $durationMins
-    ],
-    'message'     => "Sala Daily.co lista para el caso #{$caseId}. Configura DAILY_API_KEY en .env para videollamadas privadas cloud."
+    'success' => false,
+    'error'   => 'DAILY_API_ERROR',
+    'message' => 'No se pudo crear o recuperar la sala en Daily.co: ' . ($response ?? 'Error desconocido')
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+exit();

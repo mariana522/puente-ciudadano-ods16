@@ -3143,7 +3143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000);
   }
 
-  // ABRIR SALA VIRTUAL Y CONECTAR DAILY.CO
+  // ABRIR SALA VIRTUAL Y CONECTAR DAILY.CO (API REAL Y SIN SIMULACIONES FALSAS)
   window.openVirtualRoom = async (caseId) => {
     state.activeCaseIdForRoom = caseId;
     state.userExplicitlyLeftCall = false;
@@ -3159,14 +3159,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const isProf = state.currentUser?.role === 'professional';
 
     // 1. Títulos y metadatos
-    if (vRoomTitle) vRoomTitle.textContent = `Sala de Orientación Virtual: #${targetCase.id}`;
-    if (dailyRoomLabel) dailyRoomLabel.textContent = `#${targetCase.id}`;
+    if (vRoomTitle) vRoomTitle.textContent = 'Sala de Orientación Virtual: #' + targetCase.id;
+    if (dailyRoomLabel) dailyRoomLabel.textContent = '#' + targetCase.id;
 
     if (vRoomSubtitle) {
       if (isProf) {
-        vRoomSubtitle.textContent = `Ciudadano(a): ${targetCase.citizen} | Caso: ${targetCase.subType || targetCase.type} | Entidad: ${targetCase.institution}`;
+        vRoomSubtitle.textContent = 'Ciudadano(a): ' + targetCase.citizen + ' | Caso: ' + (targetCase.subType || targetCase.type) + ' | Entidad: ' + targetCase.institution;
       } else {
-        vRoomSubtitle.textContent = `En consulta con ${targetCase.assignedTo || 'Dra. Elena Gómez'} (Asesora Verificada)`;
+        vRoomSubtitle.textContent = 'En consulta con ' + (targetCase.assignedTo || 'Dra. Elena Gómez') + ' (Asesora Verificada)';
       }
     }
 
@@ -3201,50 +3201,80 @@ document.addEventListener('DOMContentLoaded', () => {
       window.PuenteDB.realtime.joinCase(targetCase.id, state.currentUser);
     }
 
-    // 5. Solicitar sala sincronizada al backend de Daily.co
-    if (dailyRoomUrlText) dailyRoomUrlText.textContent = 'Sincronizando sala Daily.co...';
-
-    let roomUrl = '';
-    let isSandbox = false;
-    try {
-      const endpoints = [
-        `/api/daily_room?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`,
-        `/backend/daily_room.php?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`,
-        `backend/daily_room.php?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`
-      ];
-
-      for (const ep of endpoints) {
-        try {
-          const resp = await fetch(ep);
-          if (resp.ok) {
-            const json = await resp.json();
-            if (json && json.roomUrl) {
-              roomUrl = json.roomUrl;
-              isSandbox = !!json.isSandbox;
-              break;
-            }
-          }
-        } catch (e) {}
-      }
-    } catch (err) {
-      console.warn('Backend daily_room no disponible:', err);
+    // 5. Solicitar sala real al backend de Daily.co
+    if (dailyRoomUrlText) {
+      dailyRoomUrlText.textContent = 'Aprovisionando sala en Daily.co...';
+      dailyRoomUrlText.style.color = '#38bdf8';
     }
 
+    let roomUrl = '';
+    let apiError = null;
+
+    try {
+      const resp = await fetch(`/api/daily_room?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`);
+      const json = await resp.json();
+
+      if (json && json.success && json.roomUrl) {
+        roomUrl = json.roomUrl;
+      } else {
+        apiError = json;
+      }
+    } catch (err) {
+      apiError = {
+        error: 'NETWORK_ERROR',
+        message: 'No se pudo conectar con el servidor backend: ' + err.message
+      };
+    }
+
+    const mount = document.getElementById('dailyIframeMount');
+
+    // SI FALLA LA SALA REAL EN DAILY.CO: Mostrar error explícito en la interfaz SIN crear salas locales falsas
     if (!roomUrl) {
-      const cleanId = String(targetCase.id).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      roomUrl = `https://puente-ciudadano.daily.co/puente-${cleanId}`;
+      console.error('[Daily.co ERROR] No se pudo aprovisionar la sala real:', apiError);
+
+      const errorTitle = apiError?.error === 'DAILY_API_KEY_MISSING'
+        ? 'Clave de Daily.co No Configurada en Render'
+        : 'Error al Conectar con Daily.co';
+
+      const errorMsg = apiError?.message || 'No se pudo generar la sala oficial en Daily.co.';
+      const hintMsg = apiError?.hint || 'Verifica que la variable de entorno DAILY_API_KEY esté correctamente configurada en Render Dashboard -> Environment.';
+
+      if (dailyRoomUrlText) {
+        dailyRoomUrlText.textContent = 'Error: ' + (apiError?.error || 'DAILY_ERROR');
+        dailyRoomUrlText.style.color = '#ef4444';
+      }
+
+      if (mount) {
+        mount.innerHTML = `
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 420px; background: #0f172a; border-radius: 8px; padding: 2.5rem 1.5rem; text-align: center; color: #ffffff;">
+            <div style="width: 68px; height: 68px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 2px solid #ef4444; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #ef4444; margin-bottom: 1.25rem;">
+              <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <h4 style="margin: 0 0 0.6rem 0; color: #f87171; font-size: 1.25rem; font-weight: 700;">${errorTitle}</h4>
+            <p style="color: #cbd5e1; max-width: 540px; font-size: 0.92rem; line-height: 1.55; margin-bottom: 1.2rem;">
+              ${errorMsg}
+            </p>
+            <div style="background: rgba(30, 41, 59, 0.95); border: 1px solid #0284c7; border-radius: 8px; padding: 0.9rem 1.25rem; font-size: 0.82rem; color: #cbd5e1; max-width: 560px; margin-bottom: 1.5rem; text-align: left; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+              <strong style="color: #38bdf8;"><i class="fas fa-info-circle"></i> Instrucción de configuración:</strong><br>
+              <span style="line-height: 1.45; display: block; margin-top: 4px;">${hintMsg}</span>
+            </div>
+            <div style="display: flex; gap: 0.75rem;">
+              <button class="btn btn-secondary" onclick="window.leaveDailyCall()"><i class="fas fa-arrow-left"></i> Volver al panel</button>
+              <button class="btn btn-turquoise" onclick="window.openVirtualRoom('${targetCase.id}')"><i class="fas fa-redo"></i> Reintentar conexión</button>
+            </div>
+          </div>
+        `;
+      }
+      showToast('Error en Daily.co: ' + errorMsg, 'error');
+      return;
     }
 
     state.activeDailyRoomUrl = roomUrl;
-    state.isDailySandbox = isSandbox;
-
-    // Enlace canónico de la sala
-    const currentOrigin = window.location.origin + window.location.pathname;
-    const internalRoomLink = `${currentOrigin}?sala=${encodeURIComponent(targetCase.id)}`;
 
     if (dailyRoomUrlText) {
       dailyRoomUrlText.textContent = roomUrl;
-      dailyRoomUrlText.title = "Sala Daily.co sincronizada para este expediente. Haz clic para copiar.";
+      dailyRoomUrlText.style.color = '#38bdf8';
+      dailyRoomUrlText.title = "Sala oficial Daily.co sincronizada para este expediente. Haz clic para copiar.";
       dailyRoomUrlText.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
           showToast('Enlace de la videollamada Daily.co copiado al portapapeles.', 'success');
@@ -3255,13 +3285,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCopyDailyUrl) {
       btnCopyDailyUrl.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
-          showToast(`Enlace de la sala para el caso #${targetCase.id} copiado al portapapeles.`, 'success');
+          showToast('Enlace de la sala Daily.co para el caso #' + targetCase.id + ' copiado al portapapeles.', 'success');
         });
       };
     }
 
-    // 6. Incrustar Daily CallFrame con soporte completo de eventos de pistas de video y audio
-    const mount = document.getElementById('dailyIframeMount');
+    // 6. Incrustar Daily CallFrame con la URL REAL de Daily.co
     if (mount) {
       if (state.dailyCallFrame) {
         try { state.dailyCallFrame.destroy(); } catch (e) {}
@@ -3278,7 +3307,7 @@ document.addEventListener('DOMContentLoaded', () => {
             iframeStyle: {
               width: '100%',
               height: '100%',
-              minHeight: '420px',
+              minHeight: '440px',
               border: 'none',
               borderRadius: '8px',
               backgroundColor: '#020617'
@@ -3289,14 +3318,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
           state.dailyCallFrame = callFrame;
 
-          // Eventos de sesión Daily.co
           callFrame.on('joined-meeting', (event) => {
-            console.log('[Daily.co] Conectado exitosamente a la sala:', roomUrl, event);
-            showToast(`Conectado a la videollamada Daily.co para el caso #${targetCase.id}`, 'success');
+            console.log('[Daily.co] Conectado exitosamente a la sala oficial:', roomUrl, event);
+            showToast('Conectado a la videollamada Daily.co (#' + targetCase.id + ')', 'success');
             updateDailyRoomParticipantCount(callFrame);
           });
 
-          // MANEJO DE PISTAS REMOTAS (VIDEO Y AUDIO)
+          // Manejo de pistas de audio y video remotas
           callFrame.on('track-started', (event) => {
             console.log('[Daily.co] Pista iniciada:', event.track?.kind, 'Local:', event.participant?.local, 'Participante:', event.participant?.user_name);
             if (!event.participant?.local) {
@@ -3316,7 +3344,7 @@ document.addEventListener('DOMContentLoaded', () => {
           callFrame.on('participant-joined', (event) => {
             const pName = event.participant?.user_name || 'La contraparte';
             console.log('[Daily.co] Participante entró a la sala:', pName);
-            showToast(`👋 ${pName} se ha unido a la videollamada en vivo.`, 'success');
+            showToast('👋 ' + pName + ' se ha unido a la videollamada.', 'success');
             updateDailyRoomParticipantCount(callFrame);
           });
 
@@ -3327,35 +3355,34 @@ document.addEventListener('DOMContentLoaded', () => {
           callFrame.on('participant-left', (event) => {
             const pName = event.participant?.user_name || 'El participante';
             console.log('[Daily.co] Participante salió de la sala:', pName);
-            showToast(`ℹ️ ${pName} ha abandonado la sala virtual.`, 'info');
+            showToast('ℹ️ ' + pName + ' ha abandonado la sala.', 'info');
             updateDailyRoomParticipantCount(callFrame);
           });
 
           callFrame.on('left-meeting', () => {
             if (state.userExplicitlyLeftCall) {
               window.leaveDailyCall();
-            } else {
-              console.log('[Daily.co] Conexión cloud finalizada o no disponible. Activando WebRTC P2P.');
-              mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
             }
           });
 
           callFrame.on('error', (err) => {
-            console.warn('[Daily.co] Error al conectar a Daily cloud:', err);
-            mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
+            console.error('[Daily.co ERROR] Error en el frame de videollamada:', err);
+            showToast('Error en la llamada de Daily.co: ' + (err?.errorMsg || JSON.stringify(err)), 'error');
           });
 
+          console.log('[Daily.co] Uniéndose a la sala real con CallFrame.join:', roomUrl);
           await callFrame.join({
             url: roomUrl,
             userName: userName
           });
 
         } catch (err) {
-          console.warn('[Daily.co] Inicialización directa falló, activando experiencia WebRTC P2P:', err);
-          mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
+          console.error('[Daily.co ERROR] Fallo al unirse a la sala real:', err);
+          showToast('Error al conectar con Daily.co: ' + err.message, 'error');
         }
       } else {
-        mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
+        console.error('[Daily.co ERROR] SDK DailyIframe no disponible en window.');
+        showToast('El SDK de Daily.co no se cargó correctamente.', 'error');
       }
     }
   };
