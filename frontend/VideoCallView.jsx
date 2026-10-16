@@ -28,7 +28,7 @@ export const VideoCallView = ({
     const fetchDailyRoom = async () => {
       try {
         setIsLoading(true);
-        const res = await fetch(`/backend/daily_room.php?caseId=${encodeURIComponent(caseId)}`);
+        const res = await fetch(`/api/daily_room?caseId=${encodeURIComponent(caseId)}`);
         if (res.ok) {
           const data = await res.json();
           if (data && data.roomUrl) {
@@ -43,7 +43,7 @@ export const VideoCallView = ({
 
       // Fallback seguro de sala Daily para caso específico
       const cleanId = String(caseId).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      setRoomUrl(`https://puente-ciudadano.daily.co/caso-${cleanId}`);
+      setRoomUrl(`https://puente-ciudadano.daily.co/puente-${cleanId}`);
       setIsLoading(false);
     };
 

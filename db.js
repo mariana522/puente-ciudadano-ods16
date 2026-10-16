@@ -850,16 +850,24 @@ const PuenteDB = {
     messages: {
       getByCase(caseId, user = null) {
         const allMessages = loadFromStorage(STORAGE_KEYS.MESSAGES, SEED_MESSAGES);
-        return allMessages[caseId] || [];
+        if (!caseId) return [];
+        const cleanId = String(caseId).trim();
+        if (allMessages[cleanId] && allMessages[cleanId].length > 0) return allMessages[cleanId];
+
+        // Probar variantes con o sin almohadilla
+        const withHash = cleanId.startsWith('#') ? cleanId : '#' + cleanId;
+        const withoutHash = cleanId.replace(/^#/, '');
+        return allMessages[withHash] || allMessages[withoutHash] || [];
       },
 
       insert(caseId, message, shouldBroadcast = true) {
         const allMessages = loadFromStorage(STORAGE_KEYS.MESSAGES, SEED_MESSAGES);
-        if (!allMessages[caseId]) allMessages[caseId] = [];
+        const cleanId = String(caseId || 'CAS-00138').trim();
+        if (!allMessages[cleanId]) allMessages[cleanId] = [];
 
         const record = {
-          id: message.id || ('MSG-' + Date.now()),
-          caseId: caseId,
+          id: message.id || ('MSG-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4)),
+          caseId: cleanId,
           sender: message.sender || 'Usuario',
           senderEmail: (message.senderEmail || '').toLowerCase().trim(),
           role: message.role || 'citizen',
@@ -869,20 +877,71 @@ const PuenteDB = {
           read: !!message.read
         };
 
-        allMessages[caseId].push(record);
+        // Deduplicación estricta por ID
+        const existingIdx = allMessages[cleanId].findIndex(m => m.id === record.id);
+        if (existingIdx >= 0) {
+          allMessages[cleanId][existingIdx] = record;
+        } else {
+          allMessages[cleanId].push(record);
+        }
+
         saveToStorage(STORAGE_KEYS.MESSAGES, allMessages);
 
-        // Transmision bidireccional en tiempo real
+        // Transmisión bidireccional en tiempo real (Sockets y Broadcast)
         if (shouldBroadcast && PuenteDB.realtime) {
           PuenteDB.realtime.broadcastMessage(record);
         }
 
-        // Persistir en MySQL backend si esta disponible
-        if (PuenteDB.mysql && typeof PuenteDB.mysql.sendMessage === 'function') {
-          PuenteDB.mysql.sendMessage(record).catch(() => {});
+        // Persistir en backend si está disponible
+        if (shouldBroadcast) {
+          try {
+            fetch('/api/mensajes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(record)
+            }).catch(() => {});
+          } catch (e) {}
         }
 
         return record;
+      },
+
+      // Sincronizar mensajes desde el servidor central persistente
+      async syncWithServer(caseId) {
+        if (!caseId) return [];
+        try {
+          const cleanCode = String(caseId).replace(/^#/, '');
+          const endpoints = [
+            '/api/mensajes?caso_codigo=' + encodeURIComponent(cleanCode),
+            '/backend/mensajes.php?caso_codigo=' + encodeURIComponent(cleanCode),
+            'backend/mensajes.php?caso_codigo=' + encodeURIComponent(cleanCode)
+          ];
+          for (const ep of endpoints) {
+            try {
+              const res = await fetch(ep);
+              if (res.ok) {
+                const json = await res.json();
+                if (json && Array.isArray(json.data) && json.data.length > 0) {
+                  const allMessages = loadFromStorage(STORAGE_KEYS.MESSAGES, SEED_MESSAGES);
+                  if (!allMessages[caseId]) allMessages[caseId] = [];
+                  json.data.forEach(srvMsg => {
+                    const idx = allMessages[caseId].findIndex(m => m.id === srvMsg.id);
+                    if (idx >= 0) {
+                      allMessages[caseId][idx] = srvMsg;
+                    } else {
+                      allMessages[caseId].push(srvMsg);
+                    }
+                  });
+                  saveToStorage(STORAGE_KEYS.MESSAGES, allMessages);
+                  return allMessages[caseId];
+                }
+              }
+            } catch (e) {}
+          }
+        } catch (err) {
+          console.warn('[PuenteDB] Error sincronizando mensajes:', err);
+        }
+        return this.getByCase(caseId);
       },
 
       // CONVERSACIONES DINAMICAS Y ESTRICTAMENTE AISLADAS POR USUARIO
@@ -988,64 +1047,146 @@ const PuenteDB = {
       socket: null,
       listeners: [],
       initialized: false,
+      activeCaseId: null,
+      activeUser: null,
 
       init() {
         if (this.initialized) return;
         this.initialized = true;
 
-        // 1. Canal local ultra-rapido (BroadcastChannel entre pestanas y ventanas)
+        // 1. Canal local ultra-rápido (BroadcastChannel entre pestañas del mismo navegador)
         if (this.channel) {
           this.channel.onmessage = (event) => {
             if (event.data && event.data.type === 'NEW_MESSAGE') {
-              this.notifyListeners('message', event.data.message);
+              const msg = event.data.message;
+              if (msg && msg.caseId) {
+                PuenteDB.messages.insert(msg.caseId, msg, false);
+              }
+              this.notifyListeners('message', msg);
             } else if (event.data && event.data.type === 'TYPING') {
               this.notifyListeners('typing', event.data);
             }
           };
         }
 
-        // 2. WebSockets via Socket.io (red y multiplataforma)
+        // 2. WebSockets vía Socket.io (red y multiplataforma en Render y Local)
         if (typeof io !== 'undefined') {
           try {
-            this.socket = io('http://localhost:3001', {
-              reconnectionAttempts: 8,
-              timeout: 3000,
+            // Resolver URL dinámicamente según el entorno
+            let socketUrl;
+            if (typeof window !== 'undefined') {
+              if (window.SOCKET_URL) {
+                socketUrl = window.SOCKET_URL;
+              } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                // Si corre localmente bajo puerto 3001 o LiveServer 5500
+                socketUrl = (window.location.port === '3001') ? window.location.origin : 'http://localhost:3001';
+              } else {
+                // En Render o servidor cloud, Socket.io opera sobre el mismo origen público HTTPS/WSS
+                socketUrl = window.location.origin;
+              }
+            } else {
+              socketUrl = 'http://localhost:3001';
+            }
+
+            console.log('[PuenteDB Realtime] Conectando Socket.io a:', socketUrl);
+
+            this.socket = io(socketUrl, {
+              reconnection: true,
+              reconnectionAttempts: 30,
+              reconnectionDelay: 1000,
+              timeout: 10000,
               transports: ['websocket', 'polling']
             });
 
             this.socket.on('connect', () => {
-              console.log('[PuenteDB Realtime] Socket.io conectado al servidor de chat en tiempo real.');
+              console.log('[PuenteDB Realtime] Socket.io conectado con id:', this.socket.id);
+              // Re-unir inmediatamente a la sala si ya se había abierto un caso
+              if (this.activeCaseId) {
+                console.log('[PuenteDB Realtime] Uniéndose a sala de caso activo:', this.activeCaseId);
+                this.socket.emit('join_case', { caseId: this.activeCaseId, user: this.activeUser });
+              }
             });
 
-            this.socket.on('new_message', (msg) => {
-              this.notifyListeners('message', msg);
+            this.socket.on('reconnect', () => {
+              console.log('[PuenteDB Realtime] Socket.io reconectado.');
+              if (this.activeCaseId) {
+                this.socket.emit('join_case', { caseId: this.activeCaseId, user: this.activeUser });
+              }
             });
+
+            // Manejo de mensajes entrantes (soporta tanto receive_message como new_message)
+            const handleIncomingMsg = (msg) => {
+              if (!msg || !msg.caseId) return;
+              console.log('[PuenteDB Realtime] Mensaje recibido vía WebSockets:', msg);
+              // Guardar en el almacenamiento del receptor (sin re-broadcast para evitar bucles)
+              PuenteDB.messages.insert(msg.caseId, msg, false);
+              this.notifyListeners('message', msg);
+            };
+
+            this.socket.on('receive_message', handleIncomingMsg);
+            this.socket.on('new_message', handleIncomingMsg);
+
+            // Carga de historial enviada al conectarse
+            const handleHistory = (msgs) => {
+              if (Array.isArray(msgs)) {
+                msgs.forEach(m => {
+                  if (m && m.caseId) PuenteDB.messages.insert(m.caseId, m, false);
+                });
+                this.notifyListeners('history_loaded', msgs);
+              }
+            };
+
+            this.socket.on('case_history', handleHistory);
+            this.socket.on('load_messages', handleHistory);
 
             this.socket.on('user_typing', (data) => {
               this.notifyListeners('typing', data);
             });
+
+            this.socket.on('user_joined', (data) => {
+              this.notifyListeners('user_joined', data);
+            });
+
+            // Señalización WebRTC para contingencia de videollamada P2P
+            this.socket.on('webrtc_offer', (data) => this.notifyListeners('webrtc_offer', data));
+            this.socket.on('webrtc_answer', (data) => this.notifyListeners('webrtc_answer', data));
+            this.socket.on('webrtc_ice_candidate', (data) => this.notifyListeners('webrtc_ice_candidate', data));
+
           } catch (err) {
-            console.warn('[PuenteDB Realtime] Servidor Socket.io no disponible, operando con BroadcastChannel:', err);
+            console.warn('[PuenteDB Realtime] Error inicializando Socket.io:', err);
           }
         }
       },
 
       joinCase(caseId, user) {
+        if (!caseId) return;
+        this.activeCaseId = caseId;
+        if (user) this.activeUser = user;
+
         if (this.socket && this.socket.connected) {
-          this.socket.emit('join_case', { caseId, user });
+          this.socket.emit('join_case', { caseId, user: this.activeUser });
         }
       },
 
       broadcastMessage(record) {
-        // Broadcast local inmediato entre ventanas
+        // Broadcast local inmediato entre pestañas
         if (this.channel) {
           try {
             this.channel.postMessage({ type: 'NEW_MESSAGE', message: record });
           } catch (e) {}
         }
-        // Transmision WebSocket
+        // Transmisión WebSocket en tiempo real
         if (this.socket && this.socket.connected) {
           this.socket.emit('send_message', record);
+        } else {
+          // Fallback REST si el socket aún no ha terminado de conectar
+          try {
+            fetch('/api/mensajes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(record)
+            }).catch(() => {});
+          } catch (e) {}
         }
       },
 

@@ -494,7 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
       window.openMessenger();
     } else if (action === 'videocalls') {
       document.getElementById('cNavCalls')?.classList.add('active');
-      window.openVirtualRoom('CAS-00138');
+      window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138');
     } else if (action === 'notifications') {
       document.getElementById('cNavNotif')?.classList.add('active');
       window.openNotificationsModal();
@@ -543,7 +543,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (action === 'messages') {
       window.openMessenger();
     } else if (action === 'videocalls') {
-      window.openVirtualRoom('CAS-00138');
+      window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138');
     } else if (action === 'notifications') {
       window.openNotificationsModal();
     } else if (action === 'institutions') {
@@ -736,7 +736,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <small style="color: var(--text-dark);">"Hola Mariana, he revisado tus desprendibles. Ya puedes solicitar la audiencia en la Inspección de Trabajo."</small>
         </div>
       </div>
-      <button class="btn btn-turquoise" style="width: 100%; margin-top: 1rem;" onclick="closeModal(); window.openVirtualRoom('CAS-00138')">
+      <button class="btn btn-turquoise" style="width: 100%; margin-top: 1rem;" onclick="closeModal(); window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138')">
         <i class="fas fa-comments"></i> Abrir Chat en Vivo
       </button>
     `);
@@ -769,7 +769,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <strong style="color: #1e40af;"><i class="fas fa-video"></i> Videollamada Hoy 09:00 a.m.</strong><br>
               <small style="color: #1d4ed8;">Consulta virtual agendada con Mariana Sibaja</small>
             </div>
-            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom('CAS-00138')"><i class="fas fa-video"></i> Conectar</button>
+            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138')"><i class="fas fa-video"></i> Conectar</button>
           </div>
 
           <div style="background: var(--soft-blue); padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -793,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <strong style="color: #1e40af;"><i class="fas fa-video"></i> Cita Virtual Programada</strong><br>
               <small style="color: #1d4ed8;">Sesión por videollamada para hoy a las 09:00 a.m.</small>
             </div>
-            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom('CAS-00138')"><i class="fas fa-video"></i> Entrar a Sala</button>
+            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138')"><i class="fas fa-video"></i> Entrar a Sala</button>
           </div>
 
           <div style="background: #fefce8; border: 1px solid #fef08a; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
@@ -1738,6 +1738,19 @@ document.addEventListener('DOMContentLoaded', () => {
   window.selectMessengerConversation = (caseId, contactEmail, contactName, contactRole, caseTag) => {
     state.activeMessengerCaseId = caseId;
     state.activeMessengerContact = { caseId, email: contactEmail, name: contactName, role: contactRole, caseTag };
+
+    // Unirse a la sala de Socket.io para este caso específico
+    if (window.PuenteDB && window.PuenteDB.realtime) {
+      window.PuenteDB.realtime.joinCase(caseId, state.currentUser);
+    }
+
+    // Sincronizar historial persistente desde el servidor
+    if (window.PuenteDB && window.PuenteDB.messages && window.PuenteDB.messages.syncWithServer) {
+      window.PuenteDB.messages.syncWithServer(caseId).then(() => {
+        window.renderMessengerThread(caseId);
+      });
+    }
+
     window.renderMessengerConversations(caseId);
   };
 
@@ -1828,18 +1841,22 @@ document.addEventListener('DOMContentLoaded', () => {
   if (window.PuenteDB && window.PuenteDB.realtime) {
     window.PuenteDB.realtime.on('message', (msg) => {
       const user = state.currentUser;
-      const myEmail = (user?.email || '').toLowerCase();
-      const myName = (user?.name || '').toLowerCase();
-      const isMine = (msg.senderEmail && msg.senderEmail.toLowerCase() === myEmail) ||
+      const myEmail = (user?.email || '').toLowerCase().trim();
+      const myName = (user?.name || '').toLowerCase().trim();
+      const isMine = (msg.senderEmail && msg.senderEmail.toLowerCase().trim() === myEmail) ||
                      (msg.sender && msg.sender.toLowerCase().trim() === myName);
 
-      // 1. Si el messenger esta abierto en este caso, actualizar hilo
-      if (state.activeMessengerCaseId === msg.caseId) {
-        window.renderMessengerThread(msg.caseId);
+      const normMsgCase = String(msg.caseId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normActiveMsgCase = String(state.activeMessengerCaseId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      // 1. Si el messenger esta abierto en este caso, actualizar hilo en tiempo real
+      if (normActiveMsgCase === normMsgCase) {
+        window.renderMessengerThread(state.activeMessengerCaseId);
       }
 
       // 2. Si estamos dentro de la sala virtual de videollamada para este caso
-      if (state.activeCaseIdForRoom === msg.caseId) {
+      const normRoomCase = String(state.activeCaseIdForRoom || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normRoomCase === normMsgCase) {
         const vChatBox = document.getElementById('vroomChatMessages');
         if (vChatBox && !isMine) {
           const incMsg = document.createElement('div');
@@ -1850,23 +1867,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // 3. Actualizar lista de conversaciones
+      // 3. Actualizar lista de conversaciones activas
       const mModal = document.getElementById('messengerModal');
       if (mModal && (mModal.classList.contains('active') || mModal.style.display === 'flex')) {
         window.renderMessengerConversations(state.activeMessengerCaseId);
       }
 
-      // 4. Notificacion flotante sutil si el mensaje es de la contraparte
+      // 4. Notificacion flotante sutil si el mensaje proviene de la contraparte
       if (!isMine) {
         showToast(`💬 Mensaje de ${msg.sender} en #${msg.caseId}: "${msg.text.substring(0, 35)}..."`, 'info');
       }
     });
 
-    // Indicador de escritura en tiempo real
+    // Carga de historial sincronizada desde el servidor
+    window.PuenteDB.realtime.on('history_loaded', () => {
+      if (state.activeMessengerCaseId) {
+        window.renderMessengerThread(state.activeMessengerCaseId);
+        window.renderMessengerConversations(state.activeMessengerCaseId);
+      }
+    });
+
+    // Indicador de escritura en tiempo real ("Está escribiendo...")
     window.PuenteDB.realtime.on('typing', ({ caseId, user, isTyping }) => {
-      if (caseId === state.activeMessengerCaseId) {
-        const myEmail = (state.currentUser?.email || '').toLowerCase();
-        const isMine = user?.email && user.email.toLowerCase() === myEmail;
+      const normCase = String(caseId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normActiveCase = String(state.activeMessengerCaseId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (normCase === normActiveCase) {
+        const myEmail = (state.currentUser?.email || '').toLowerCase().trim();
+        const isMine = user?.email && user.email.toLowerCase().trim() === myEmail;
         if (!isMine) {
           const roleEl = document.getElementById('mActiveRole');
           if (roleEl) {
@@ -2844,7 +2871,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 9. SALA VIRTUAL DAILY.CO Y HOJA DE RUTA
+  // 9. SALA VIRTUAL DAILY.CO Y HOJA DE RUTA (WEBRTC EN VIVO MULTIDISPOSITIVO)
   // ==========================================================================
   const virtualRoomModal = document.getElementById('virtualRoomModal');
   const vRoomTitle = document.getElementById('vRoomTitle');
@@ -2860,16 +2887,65 @@ document.addEventListener('DOMContentLoaded', () => {
   const vroomEndCall = document.getElementById('vroomEndCall');
 
   state.dailyCallFrame = null;
+  state.p2pPeerConnection = null;
+  state.remoteMediaStream = null;
   state.isAudioMuted = false;
   state.isVideoOff = false;
   state.isScreenSharing = false;
 
-  
+  // Manejo de pistas de audio y video remotas en Daily.co
+  function handleRemoteDailyTrack(event) {
+    const track = event.track;
+    const participant = event.participant;
+    if (!track || !participant) return;
+
+    console.log('[Daily.co WebRTC] Procesando pista remota:', track.kind, 'de:', participant.user_name);
+
+    if (track.kind === 'audio') {
+      let audioEl = document.getElementById('dailyRemoteAudio_' + participant.session_id);
+      if (!audioEl) {
+        audioEl = document.createElement('audio');
+        audioEl.id = 'dailyRemoteAudio_' + participant.session_id;
+        audioEl.autoplay = true;
+        audioEl.playsinline = true;
+        audioEl.style.display = 'none';
+        document.body.appendChild(audioEl);
+      }
+      audioEl.srcObject = new MediaStream([track]);
+      audioEl.play().catch(e => console.warn('[Daily.co] Autoplay audio restringido:', e));
+    }
+  }
+
+  function handleRemoteDailyTrackStopped(event) {
+    const participant = event.participant;
+    if (!participant) return;
+    if (event.track?.kind === 'audio') {
+      const audioEl = document.getElementById('dailyRemoteAudio_' + participant.session_id);
+      if (audioEl) {
+        try { audioEl.srcObject = null; audioEl.remove(); } catch (e) {}
+      }
+    }
+  }
+
+  // Actualizar indicadores visuales de participantes en la sala
+  function updateDailyRoomParticipantCount(callFrame) {
+    if (!callFrame) return;
+    try {
+      const participants = callFrame.participants();
+      const count = Object.keys(participants).length;
+      const countBadge = document.getElementById('vroomParticipantBadge');
+      if (countBadge) {
+        countBadge.textContent = count + ' en sala';
+      }
+    } catch (e) {}
+  }
+
   // ==========================================================================
-  // EXPERIENCIA VIRTUAL INTERACTIVA (SANDBOX & DAILY WEBRTC)
-  // Permite mantener la llamada activa indefinidamente sin caerse a los 3s
+  // WEBRTC P2P FALLBACK (CONEXION REAL DE AUDIO Y VIDEO ENTRE NAVEGADORES)
+  // Permite que Ciudadano y Profesional se vean y escuchen en vivo si la sala
+  // de Daily cloud no estuviera aprovisionada con clave privada.
   // ==========================================================================
-  function mountSandboxExperience(mount, targetCase, userName, isProf, roomUrl) {
+  function mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl) {
     if (!mount) return;
     if (state.callTimerInterval) {
       clearInterval(state.callTimerInterval);
@@ -2883,28 +2959,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     mount.innerHTML = `
       <div class="daily-active-room" style="position: relative; width: 100%; height: 100%; min-height: 0; flex: 1; background: #090d16; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column;">
-        <!-- Top Call Status Overlay -->
+        <!-- Barra de Estado Superior -->
         <div style="position: absolute; top: 12px; left: 14px; right: 14px; z-index: 10; display: flex; justify-content: space-between; align-items: center; pointer-events: none;">
-          <div style="display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);">
-            <div style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 8px #ef4444; animation: pulse 1.5s infinite;"></div>
+          <div style="display: flex; align-items: center; gap: 8px; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); padding: 5px 12px; border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981; animation: pulse 1.5s infinite;"></div>
             <span style="font-weight: 700; font-size: 0.75rem; color: #fff; letter-spacing: 0.5px;">EN VIVO</span>
             <span id="sandboxCallTimer" style="font-family: monospace; font-size: 0.78rem; color: #38bdf8; font-weight: 600;">00:00</span>
           </div>
-          <div style="background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); padding: 5px 12px; border-radius: 20px; font-size: 0.72rem; color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); display: flex; align-items: center; gap: 5px;">
-            <i class="fas fa-shield-alt"></i> WebRTC Cifrado ODS 16
+          <div style="background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); padding: 5px 12px; border-radius: 20px; font-size: 0.72rem; color: #10b981; border: 1px solid rgba(16, 185, 129, 0.25); display: flex; align-items: center; gap: 5px;">
+            <i class="fas fa-shield-alt"></i> WebRTC P2P Cifrado ODS 16
           </div>
         </div>
 
-        <!-- Banner de modo Sandbox / Contingencia -->
+        <!-- Banner de Sesión Activa -->
         <div style="position: absolute; top: 52px; left: 14px; right: 14px; z-index: 10; background: rgba(30, 41, 59, 0.9); border: 1px solid #0284c7; padding: 6px 12px; border-radius: 6px; font-size: 0.72rem; color: #e2e8f0; display: flex; align-items: center; gap: 8px;">
-          <i class="fas fa-info-circle" style="color: #38bdf8; font-size: 0.9rem;"></i>
-          <span><strong>Orientación en Vivo Activa:</strong> Conexión establecida para el caso <strong>#${targetCase.id}</strong>. (Para salas en la nube de Daily.co, añade tu <code>DAILY_API_KEY</code> a <code>.env</code>).</span>
+          <i class="fas fa-video" style="color: #38bdf8; font-size: 0.9rem;"></i>
+          <span><strong>Orientación en Vivo Activa:</strong> Canal directo para el caso <strong>#${targetCase.id}</strong> entre <strong>${targetCase.citizen}</strong> y <strong>${targetCase.assignedTo || 'Profesional Asignado'}</strong>.</span>
         </div>
 
-        <!-- Main Video Area (Counterpart View) -->
-        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: radial-gradient(circle at center, #1e293b 0%, #090d16 100%);">
-          <!-- Counterpart Avatar & Status -->
-          <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 2;">
+        <!-- Área Principal de Video (Remoto de la Contraparte) -->
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; background: radial-gradient(circle at center, #1e293b 0%, #090d16 100%); overflow: hidden;">
+          <!-- Video Remoto en Vivo (se muestra automáticamente al conectar la contraparte) -->
+          <video id="sandboxRemoteVideo" autoplay playsinline style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; z-index: 1;"></video>
+
+          <!-- Placeholder de Espera / Avatar de la Contraparte -->
+          <div id="sandboxAvatarPlaceholder" style="display: flex; flex-direction: column; align-items: center; gap: 12px; z-index: 2;">
             <div style="position: relative;">
               <div style="width: 90px; height: 90px; border-radius: 50%; background: linear-gradient(135deg, #0ea5e9, #0284c7); display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 800; color: #fff; box-shadow: 0 0 25px rgba(14, 165, 233, 0.35); border: 3px solid #38bdf8;">
                 ${counterpartAvatar}
@@ -2915,9 +2994,9 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div style="text-align: center;">
               <h5 style="margin: 0; color: #ffffff; font-size: 1.05rem; font-weight: 700;">${counterpartName}</h5>
-              <span style="font-size: 0.75rem; color: #94a3b8;">${counterpartRole}</span>
+              <span id="sandboxRemoteStatus" style="font-size: 0.75rem; color: #38bdf8;">${counterpartRole} (Esperando enlace de video...)</span>
             </div>
-            <!-- Audio Activity Visualizer -->
+            <!-- Visualizador de actividad -->
             <div style="display: flex; gap: 4px; align-items: center; height: 18px; margin-top: 4px;">
               <span style="width: 4px; height: 8px; background: #38bdf8; border-radius: 2px; animation: soundWave 1.2s infinite ease-in-out;"></span>
               <span style="width: 4px; height: 16px; background: #38bdf8; border-radius: 2px; animation: soundWave 0.8s infinite ease-in-out;"></span>
@@ -2927,8 +3006,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
           </div>
 
-          <!-- Picture in Picture (Local Participant Video / Preview) -->
-          <div id="sandboxLocalPip" style="position: absolute; bottom: 16px; right: 16px; width: 130px; height: 95px; background: #1e293b; border-radius: 8px; border: 2px solid #334155; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); z-index: 5;">
+          <!-- Ventana PiP del Participante Local -->
+          <div id="sandboxLocalPip" style="position: absolute; bottom: 16px; right: 16px; width: 140px; height: 105px; background: #1e293b; border-radius: 8px; border: 2px solid #38bdf8; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.6); z-index: 5;">
             <video id="sandboxLocalVideo" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
             <div id="sandboxLocalAvatarPlaceholder" style="width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;">
               <div style="width: 34px; height: 34px; border-radius: 50%; background: #00a896; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700;">
@@ -2941,7 +3020,42 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
-    // Intentar activar cámara web local en PiP
+    // 1. Inicializar conexión WebRTC P2P con servidores STUN públicos de Google
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+    const pc = new RTCPeerConnection(rtcConfig);
+    state.p2pPeerConnection = pc;
+
+    // Manejo de pistas remotas recibidas por WebRTC
+    pc.ontrack = (event) => {
+      console.log('[WebRTC P2P] Pista remota recibida:', event.track.kind);
+      const remoteVideo = document.getElementById('sandboxRemoteVideo');
+      const avatarPh = document.getElementById('sandboxAvatarPlaceholder');
+      if (remoteVideo && event.streams[0]) {
+        state.remoteMediaStream = event.streams[0];
+        remoteVideo.srcObject = event.streams[0];
+        remoteVideo.style.display = 'block';
+        if (avatarPh) avatarPh.style.display = 'none';
+        showToast('🎥 ¡Transmisión de video en vivo conectada con la contraparte!', 'success');
+      }
+    };
+
+    // Envío de candidatos ICE a través de Socket.io
+    pc.onicecandidate = (event) => {
+      if (event.candidate && window.PuenteDB?.realtime?.socket) {
+        window.PuenteDB.realtime.socket.emit('webrtc_ice_candidate', {
+          caseId: targetCase.id,
+          candidate: event.candidate,
+          sender: userName
+        });
+      }
+    };
+
+    // 2. Activar cámara y micrófono local
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       navigator.mediaDevices.getUserMedia({ video: true, audio: true })
         .then(stream => {
@@ -2953,13 +3067,71 @@ document.addEventListener('DOMContentLoaded', () => {
             v.style.display = 'block';
             ph.style.display = 'none';
           }
+
+          // Añadir pistas locales al PeerConnection
+          stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+          // Si es el profesional o ya hay alguien en la sala, iniciar la oferta
+          if (isProf && window.PuenteDB?.realtime?.socket) {
+            setTimeout(async () => {
+              try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                window.PuenteDB.realtime.socket.emit('webrtc_offer', {
+                  caseId: targetCase.id,
+                  offer: offer,
+                  sender: userName
+                });
+              } catch (e) {
+                console.warn('[WebRTC P2P] Error creando oferta:', e);
+              }
+            }, 1000);
+          }
         })
         .catch(err => {
-          console.log('[Daily.co] Permiso de cámara no concedido o no disponible, usando avatar representativo.');
+          console.warn('[WebRTC] Permiso de cámara no concedido:', err.message);
         });
     }
 
-    // Cronómetro en vivo que incrementa cada segundo
+    // Escuchar ofertas, respuestas y candidatos de la contraparte mediante Socket.io
+    const socket = window.PuenteDB?.realtime?.socket;
+    if (socket) {
+      socket.on('webrtc_offer', async ({ offer, sender }) => {
+        if (!state.p2pPeerConnection) return;
+        console.log('[WebRTC P2P] Oferta recibida de:', sender);
+        try {
+          await state.p2pPeerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+          const answer = await state.p2pPeerConnection.createAnswer();
+          await state.p2pPeerConnection.setLocalDescription(answer);
+          socket.emit('webrtc_answer', {
+            caseId: targetCase.id,
+            answer: answer,
+            sender: userName
+          });
+        } catch (e) {
+          console.warn('[WebRTC P2P] Error respondiendo oferta:', e);
+        }
+      });
+
+      socket.on('webrtc_answer', async ({ answer, sender }) => {
+        if (!state.p2pPeerConnection) return;
+        console.log('[WebRTC P2P] Respuesta recibida de:', sender);
+        try {
+          await state.p2pPeerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (e) {
+          console.warn('[WebRTC P2P] Error procesando respuesta:', e);
+        }
+      });
+
+      socket.on('webrtc_ice_candidate', async ({ candidate }) => {
+        if (!state.p2pPeerConnection) return;
+        try {
+          await state.p2pPeerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {}
+      });
+    }
+
+    // Cronómetro en vivo
     state.callTimerInterval = setInterval(() => {
       state.callSeconds = (state.callSeconds || 0) + 1;
       const mins = Math.floor(state.callSeconds / 60);
@@ -2971,9 +3143,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000);
   }
 
+  // ABRIR SALA VIRTUAL Y CONECTAR DAILY.CO
   window.openVirtualRoom = async (caseId) => {
     state.activeCaseIdForRoom = caseId;
-    state.userExplicitlyLeftCall = false; // Flag para no cerrar modal automáticamente por error de conexión
+    state.userExplicitlyLeftCall = false;
+
     const targetCase = state.cases.find(c => c.id === caseId) || state.cases[0] || {
       id: caseId || 'CAS-00138',
       citizen: 'Mariana Sibaja',
@@ -2996,7 +3170,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. Chat de bienvenida contextual
+    // 2. Chat contextual de bienvenida
     const box = document.getElementById('vroomChatMessages');
     if (box) {
       box.innerHTML = `
@@ -3008,8 +3182,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 3. Abrir modal
-    
-    // Configurar toggle para abrir/ocultar el chat en la videollamada
     const chatToggle = document.getElementById('vroomChatToggle');
     const chatPanel = document.getElementById('vroomChatPanel');
     const vBody = document.querySelector('.virtual-room-body');
@@ -3017,31 +3189,45 @@ document.addEventListener('DOMContentLoaded', () => {
       chatToggle.onclick = () => {
         const isHidden = chatPanel.style.display === 'none' || chatPanel.style.display === '';
         chatPanel.style.display = isHidden ? 'flex' : 'none';
-        if (vBody) {
-          vBody.classList.toggle('with-chat', isHidden);
-        }
+        if (vBody) vBody.classList.toggle('with-chat', isHidden);
         chatToggle.classList.toggle('active', isHidden);
       };
     }
 
     if (virtualRoomModal) { virtualRoomModal.classList.add('active'); virtualRoomModal.style.display = 'flex'; }
 
-    // 4. Solicitar sala al backend Daily.co
-    if (dailyRoomUrlText) dailyRoomUrlText.textContent = 'Aprovisionando sala en Daily.co...';
+    // 4. Unirse a la sala de WebSockets para este caso
+    if (window.PuenteDB && window.PuenteDB.realtime) {
+      window.PuenteDB.realtime.joinCase(targetCase.id, state.currentUser);
+    }
+
+    // 5. Solicitar sala sincronizada al backend de Daily.co
+    if (dailyRoomUrlText) dailyRoomUrlText.textContent = 'Sincronizando sala Daily.co...';
 
     let roomUrl = '';
-    let isSandbox = true;
+    let isSandbox = false;
     try {
-      const resp = await fetch(`backend/daily_room.php?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`);
-      if (resp.ok) {
-        const json = await resp.json();
-        if (json && json.roomUrl) {
-          roomUrl = json.roomUrl;
-          isSandbox = !!json.isSandbox;
-        }
+      const endpoints = [
+        `/api/daily_room?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`,
+        `/backend/daily_room.php?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`,
+        `backend/daily_room.php?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`
+      ];
+
+      for (const ep of endpoints) {
+        try {
+          const resp = await fetch(ep);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json && json.roomUrl) {
+              roomUrl = json.roomUrl;
+              isSandbox = !!json.isSandbox;
+              break;
+            }
+          }
+        } catch (e) {}
       }
     } catch (err) {
-      console.warn('Backend daily_room no disponible, usando URL fallback:', err);
+      console.warn('Backend daily_room no disponible:', err);
     }
 
     if (!roomUrl) {
@@ -3052,39 +3238,29 @@ document.addEventListener('DOMContentLoaded', () => {
     state.activeDailyRoomUrl = roomUrl;
     state.isDailySandbox = isSandbox;
 
-    // Enlace interno para compartir entre pestañas de la plataforma
+    // Enlace canónico de la sala
     const currentOrigin = window.location.origin + window.location.pathname;
     const internalRoomLink = `${currentOrigin}?sala=${encodeURIComponent(targetCase.id)}`;
 
     if (dailyRoomUrlText) {
-      if (isSandbox) {
-        dailyRoomUrlText.textContent = `${internalRoomLink}`;
-        dailyRoomUrlText.title = "Enlace interno del caso. Para salas en daily.co en la nube, configura DAILY_API_KEY en .env";
-        dailyRoomUrlText.onclick = () => {
-          showToast('Enlace interno de la sala copiado. Para enlaces públicos en daily.co, ingresa tu DAILY_API_KEY en .env', 'info');
-          navigator.clipboard.writeText(internalRoomLink);
-        };
-      } else {
-        dailyRoomUrlText.textContent = roomUrl;
-        dailyRoomUrlText.title = "Sala en la nube de Daily.co activa. Haz clic para abrir en nueva pestaña.";
-        dailyRoomUrlText.onclick = () => window.open(roomUrl, '_blank');
-      }
-    }
-
-    if (btnCopyDailyUrl) {
-      btnCopyDailyUrl.onclick = () => {
-        const linkToCopy = isSandbox ? internalRoomLink : roomUrl;
-        navigator.clipboard.writeText(linkToCopy).then(() => {
-          if (isSandbox) {
-            showToast(`Enlace de la sala para el caso #${targetCase.id} copiado al portapapeles.`, 'success');
-          } else {
-            showToast('Enlace de la sala en Daily.co copiado al portapapeles.', 'success');
-          }
+      dailyRoomUrlText.textContent = roomUrl;
+      dailyRoomUrlText.title = "Sala Daily.co sincronizada para este expediente. Haz clic para copiar.";
+      dailyRoomUrlText.onclick = () => {
+        navigator.clipboard.writeText(roomUrl).then(() => {
+          showToast('Enlace de la videollamada Daily.co copiado al portapapeles.', 'success');
         });
       };
     }
 
-    // 5. Incrustar Daily CallFrame
+    if (btnCopyDailyUrl) {
+      btnCopyDailyUrl.onclick = () => {
+        navigator.clipboard.writeText(roomUrl).then(() => {
+          showToast(`Enlace de la sala para el caso #${targetCase.id} copiado al portapapeles.`, 'success');
+        });
+      };
+    }
+
+    // 6. Incrustar Daily CallFrame con soporte completo de eventos de pistas de video y audio
     const mount = document.getElementById('dailyIframeMount');
     if (mount) {
       if (state.dailyCallFrame) {
@@ -3093,16 +3269,16 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       mount.innerHTML = '';
 
-      const userName = state.currentUser?.name || (isProf ? 'Orientador Especialista' : 'Ciudadano Solicitante');
-
+      const userName = state.currentUser?.name || (isProf ? 'Dra. Elena Gómez' : 'Mariana Sibaja');
       const dailyFactory = window.DailyIframe || window.Daily;
+
       if (dailyFactory && typeof dailyFactory.createFrame === 'function') {
         try {
           const callFrame = dailyFactory.createFrame(mount, {
             iframeStyle: {
               width: '100%',
               height: '100%',
-              minHeight: '380px',
+              minHeight: '420px',
               border: 'none',
               borderRadius: '8px',
               backgroundColor: '#020617'
@@ -3111,44 +3287,80 @@ document.addEventListener('DOMContentLoaded', () => {
             showFullscreenButton: true
           });
 
-          
           state.dailyCallFrame = callFrame;
 
-          callFrame.on('joined-meeting', () => {
+          // Eventos de sesión Daily.co
+          callFrame.on('joined-meeting', (event) => {
+            console.log('[Daily.co] Conectado exitosamente a la sala:', roomUrl, event);
             showToast(`Conectado a la videollamada Daily.co para el caso #${targetCase.id}`, 'success');
+            updateDailyRoomParticipantCount(callFrame);
           });
 
-          // Solo cerrar si el usuario activó la acción de abandonar llamada manualmente
+          // MANEJO DE PISTAS REMOTAS (VIDEO Y AUDIO)
+          callFrame.on('track-started', (event) => {
+            console.log('[Daily.co] Pista iniciada:', event.track?.kind, 'Local:', event.participant?.local, 'Participante:', event.participant?.user_name);
+            if (!event.participant?.local) {
+              handleRemoteDailyTrack(event);
+            }
+            updateDailyRoomParticipantCount(callFrame);
+          });
+
+          callFrame.on('track-stopped', (event) => {
+            console.log('[Daily.co] Pista detenida:', event.track?.kind, 'Participante:', event.participant?.user_name);
+            if (!event.participant?.local) {
+              handleRemoteDailyTrackStopped(event);
+            }
+            updateDailyRoomParticipantCount(callFrame);
+          });
+
+          callFrame.on('participant-joined', (event) => {
+            const pName = event.participant?.user_name || 'La contraparte';
+            console.log('[Daily.co] Participante entró a la sala:', pName);
+            showToast(`👋 ${pName} se ha unido a la videollamada en vivo.`, 'success');
+            updateDailyRoomParticipantCount(callFrame);
+          });
+
+          callFrame.on('participant-updated', () => {
+            updateDailyRoomParticipantCount(callFrame);
+          });
+
+          callFrame.on('participant-left', (event) => {
+            const pName = event.participant?.user_name || 'El participante';
+            console.log('[Daily.co] Participante salió de la sala:', pName);
+            showToast(`ℹ️ ${pName} ha abandonado la sala virtual.`, 'info');
+            updateDailyRoomParticipantCount(callFrame);
+          });
+
           callFrame.on('left-meeting', () => {
             if (state.userExplicitlyLeftCall) {
               window.leaveDailyCall();
             } else {
-              console.log('[Daily.co] Desconexión de sala cloud por falta de API Key. Activando Sandbox interactivo.');
-              mountSandboxExperience(mount, targetCase, userName, isProf, roomUrl);
+              console.log('[Daily.co] Conexión cloud finalizada o no disponible. Activando WebRTC P2P.');
+              mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
             }
           });
 
           callFrame.on('error', (err) => {
-            console.warn('[Daily.co] Error o sala no encontrada en Daily cloud:', err);
-            // Si la sala cloud falla (por ejemplo, sin API Key activa), mantener la llamada viva en modo Sandbox
-            mountSandboxExperience(mount, targetCase, userName, isProf, roomUrl);
+            console.warn('[Daily.co] Error al conectar a Daily cloud:', err);
+            mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
           });
 
           await callFrame.join({
             url: roomUrl,
             userName: userName
           });
+
         } catch (err) {
-          console.warn('Daily CallFrame directo no pudo unirse, activando experiencia interactiva:', err);
-          mountSandboxExperience(mount, targetCase, userName, isProf, roomUrl);
+          console.warn('[Daily.co] Inicialización directa falló, activando experiencia WebRTC P2P:', err);
+          mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
         }
       } else {
-        mountSandboxExperience(mount, targetCase, userName, isProf, roomUrl);
+        mountWebRtcExperience(mount, targetCase, userName, isProf, roomUrl);
       }
     }
   };
 
-  // Función para abandonar la videollamada y regresar al panel correspondiente
+  // Función para abandonar la videollamada limpiamente
   window.leaveDailyCall = () => {
     state.userExplicitlyLeftCall = true;
 
@@ -3159,6 +3371,17 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {}
       state.localMediaStream = null;
     }
+
+    // Detener PeerConnection WebRTC si estaba activo
+    if (state.p2pPeerConnection) {
+      try { state.p2pPeerConnection.close(); } catch (e) {}
+      state.p2pPeerConnection = null;
+    }
+
+    // Limpiar elementos de audio remoto
+    document.querySelectorAll('[id^="dailyRemoteAudio_"]').forEach(el => {
+      try { el.srcObject = null; el.remove(); } catch (e) {}
+    });
 
     // Detener temporizador
     if (state.callTimerInterval) {
@@ -3184,12 +3407,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (viewProfessionalSection) viewProfessionalSection.style.display = 'block';
       if (viewCitizenSection) viewCitizenSection.style.display = 'none';
       renderProfessionalTable();
-      showToast('Has abandonado la videollamada. Has regresado al Panel Profesional.', 'info');
+      showToast('Has salido de la videollamada. Has regresado al Panel Profesional.', 'info');
     } else {
       if (viewCitizenSection) viewCitizenSection.style.display = 'block';
       if (viewProfessionalSection) viewProfessionalSection.style.display = 'none';
       renderCitizenTable();
-      showToast('Has abandonado la videollamada. Has regresado a tu Panel Ciudadano.', 'info');
+      showToast('Has salido de la videollamada. Has regresado a tu Panel Ciudadano.', 'info');
     }
   };
 
@@ -3205,25 +3428,18 @@ document.addEventListener('DOMContentLoaded', () => {
       try { state.dailyCallFrame.setLocalAudio(!state.isAudioMuted); } catch (e) {}
     }
     
-    // Control real de pistas de audio en getUserMedia
+    // Control en pistas de getUserMedia
     if (state.localMediaStream) {
       state.localMediaStream.getAudioTracks().forEach(t => {
         t.enabled = !state.isAudioMuted;
       });
     }
 
-    // Actualizar apariencia del botón
     vroomMicToggle.classList.toggle('active-muted', state.isAudioMuted);
     vroomMicToggle.innerHTML = state.isAudioMuted ? '<i class="fas fa-microphone-slash"></i>' : '<i class="fas fa-microphone"></i>';
     vroomMicToggle.title = state.isAudioMuted ? 'Activar micrófono' : 'Silenciar micrófono';
 
-    // Actualizar indicador en PiP
-    const micBadge = document.getElementById('sandboxLocalMicBadge');
-    if (micBadge) {
-      micBadge.style.display = state.isAudioMuted ? 'flex' : 'none';
-    }
-
-    showToast(state.isAudioMuted ? 'Micrófono silenciado (Mute).' : 'Micrófono activado.', state.isAudioMuted ? 'warning' : 'success');
+    showToast(state.isAudioMuted ? 'Micrófono silenciado.' : 'Micrófono activado.', state.isAudioMuted ? 'warning' : 'success');
   });
 
   vroomCamToggle?.addEventListener('click', async () => {
@@ -3234,31 +3450,19 @@ document.addEventListener('DOMContentLoaded', () => {
       try { state.dailyCallFrame.setLocalVideo(!state.isVideoOff); } catch (e) {}
     }
     
-    // Control real de pistas de video en getUserMedia
+    // Control en pistas de getUserMedia
     if (state.localMediaStream) {
       state.localMediaStream.getVideoTracks().forEach(t => {
         t.enabled = !state.isVideoOff;
       });
-    } else if (!state.isVideoOff && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      // Si la cámara estaba apagada y el usuario la enciende, solicitar acceso
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        state.localMediaStream = stream;
-        const v = document.getElementById('sandboxLocalVideo');
-        if (v) { v.srcObject = stream; }
-      } catch (err) {
-        console.log('Cámara no disponible:', err);
+      const v = document.getElementById('sandboxLocalVideo');
+      const ph = document.getElementById('sandboxLocalAvatarPlaceholder');
+      if (v && ph) {
+        v.style.display = state.isVideoOff ? 'none' : 'block';
+        ph.style.display = state.isVideoOff ? 'flex' : 'none';
       }
     }
 
-    const localVid = document.getElementById('sandboxLocalVideo');
-    const localPh = document.getElementById('sandboxLocalAvatarPlaceholder');
-    if (localVid && localPh) {
-      localVid.style.display = state.isVideoOff ? 'none' : 'block';
-      localPh.style.display = state.isVideoOff ? 'flex' : 'none';
-    }
-
-    // Actualizar apariencia del botón
     vroomCamToggle.classList.toggle('active-muted', state.isVideoOff);
     vroomCamToggle.innerHTML = state.isVideoOff ? '<i class="fas fa-video-slash"></i>' : '<i class="fas fa-video"></i>';
     vroomCamToggle.title = state.isVideoOff ? 'Encender cámara' : 'Apagar cámara';
@@ -3284,7 +3488,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.warn('Error al compartir pantalla:', err);
       }
     } else {
-      showToast('La función de compartir pantalla se gestiona dentro del marco de la llamada.', 'info');
+      showToast('La función de compartir pantalla se gestiona dentro de la llamada en vivo.', 'info');
     }
   });
 

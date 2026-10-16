@@ -113,6 +113,45 @@ export const VideoRoom = ({
         setParticipantCount(Object.keys(participants).length);
       });
 
+      // Manejo explícito de pistas de video y audio remotas
+      callFrame.on('track-started', (event) => {
+        console.log('[VideoRoom Daily.co] Pista remota iniciada:', event.track?.kind, 'Participante:', event.participant?.user_name);
+        if (!event.participant?.local) {
+          if (event.track?.kind === 'audio') {
+            let el = document.getElementById('daily_remote_audio_' + event.participant?.session_id);
+            if (!el) {
+              el = document.createElement('audio');
+              el.id = 'daily_remote_audio_' + event.participant?.session_id;
+              el.autoplay = true;
+              el.playsinline = true;
+              document.body.appendChild(el);
+            }
+            el.srcObject = new MediaStream([event.track]);
+            el.play().catch(() => {});
+          }
+        }
+        const participants = callFrame.participants();
+        setParticipantCount(Object.keys(participants).length);
+      });
+
+      callFrame.on('track-stopped', (event) => {
+        console.log('[VideoRoom Daily.co] Pista remota detenida:', event.track?.kind, 'Participante:', event.participant?.user_name);
+        if (!event.participant?.local && event.track?.kind === 'audio') {
+          const el = document.getElementById('daily_remote_audio_' + event.participant?.session_id);
+          if (el) {
+            el.srcObject = null;
+            el.remove();
+          }
+        }
+        const participants = callFrame.participants();
+        setParticipantCount(Object.keys(participants).length);
+      });
+
+      callFrame.on('participant-updated', () => {
+        const participants = callFrame.participants();
+        setParticipantCount(Object.keys(participants).length);
+      });
+
       callFrame.on('error', (err) => {
         console.warn('[VideoRoom] Error o sala Daily no configurada en la nube:', err);
         // Mantener llamada activa en modo simulación

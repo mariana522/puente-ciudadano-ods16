@@ -1,0 +1,92 @@
+{
+  "cas00138": [
+    {
+      "id": "MSG-101",
+      "caseId": "CAS-00138",
+      "sender": "Dra. Elena Gómez",
+      "senderEmail": "elena.gomez@asesores.org",
+      "role": "professional",
+      "text": "Hola Mariana, bienvenida al canal de orientación ciudadana (ODS 16). He revisado tu reporte sobre terminación laboral sin liquidación.",
+      "time": "09:15 a.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T14:15:00.000Z"
+    },
+    {
+      "id": "MSG-102",
+      "caseId": "CAS-00138",
+      "sender": "Mariana Sibaja",
+      "senderEmail": "mariana.sibaja@ejemplo.com",
+      "role": "citizen",
+      "text": "Buenos días Dra. Elena. Muchas gracias por atenderme. Trabajé por más de un año en la empresa y me despidieron sin pagarme la liquidación ni las primas.",
+      "time": "09:18 a.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T14:18:00.000Z"
+    },
+    {
+      "id": "MSG-103",
+      "caseId": "CAS-00138",
+      "sender": "Dra. Elena Gómez",
+      "senderEmail": "elena.gomez@asesores.org",
+      "role": "professional",
+      "text": "Entiendo perfectamente, Mariana. Tenemos derecho a exigir la liquidación completa de cesantías, intereses, prima y vacaciones. Ya emití la Hoja de Ruta para radicar la reclamación ante la Inspección del Trabajo.",
+      "time": "09:22 a.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T14:22:00.000Z"
+    }
+  ],
+  "cas00139": [
+    {
+      "id": "MSG-201",
+      "caseId": "CAS-00139",
+      "sender": "Carlos Rodríguez",
+      "senderEmail": "carlos.rodriguez@ejemplo.com",
+      "role": "citizen",
+      "text": "Doctora Elena, buenas tardes. Radiqué un derecho de petición ante la entidad hace más de 20 días hábiles y no he recibido ninguna respuesta.",
+      "time": "11:05 a.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T16:05:00.000Z"
+    },
+    {
+      "id": "MSG-202",
+      "caseId": "CAS-00139",
+      "sender": "Dra. Elena Gómez",
+      "senderEmail": "elena.gomez@asesores.org",
+      "role": "professional",
+      "text": "Hola Carlos. El plazo constitucional ordinario es de 15 días hábiles. Al haberse vencido en exceso, procede interponer de forma inmediata una Acción de Tutela.",
+      "time": "11:12 a.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T16:12:00.000Z"
+    }
+  ],
+  "cas00129": [
+    {
+      "id": "MSG-301",
+      "caseId": "CAS-00129",
+      "sender": "Daniela Doria",
+      "senderEmail": "daniela.doria@ejemplo.com",
+      "role": "citizen",
+      "text": "Buen día, quisiera saber qué requisitos necesito para fijar la cuota de alimentos de mi hijo ante la Comisaría de Familia.",
+      "time": "02:40 p.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T19:40:00.000Z"
+    },
+    {
+      "id": "MSG-302",
+      "caseId": "CAS-00129",
+      "sender": "Dra. Elena Gómez",
+      "senderEmail": "elena.gomez@asesores.org",
+      "role": "professional",
+      "text": "Hola Daniela. Debes aportar el Registro Civil de Nacimiento del niño, copia de tu cédula y una relación estimada de gastos de alimentación, vestuario, salud y educación.",
+      "time": "02:45 p.m.",
+      "date": "2026-09-01",
+      "read": true,
+      "createdAt": "2026-09-01T19:45:00.000Z"
+    }
+  ]
+}
