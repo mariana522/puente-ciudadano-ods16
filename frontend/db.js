@@ -15,7 +15,7 @@
     SESSION: 'puente_db_session_v2',
     MESSAGES: 'puente_db_messages_v2',
     METRICS: 'puente_db_metrics_v2',
-    AGENDA: 'puente_db_agenda_v2'
+    AGENDA: 'puente_db_agenda_v3'
   };
 
   // Semilla de usuarios con perfiles independientes y completos
@@ -323,8 +323,8 @@
     },
     {
       id: 'EVT-003',
-      profEmail: 'elena.gomez@asesores.org',
-      profName: 'Dra. Elena Gómez',
+      profEmail: 'mauricio.padilla@asesores.org',
+      profName: 'Dr. Mauricio Padilla',
       citizenName: 'Daniela Doria',
       citizenEmail: 'daniela.doria@ejemplo.com',
       caseId: 'CAS-00129',
@@ -332,6 +332,18 @@
       time: '03:00 p.m.',
       date: todayStrIso,
       topic: 'Videollamada caso #00129 (Daniela Doria - Custodia familiar)'
+    },
+    {
+      id: 'EVT-004',
+      profEmail: 'mauricio.padilla@asesores.org',
+      profName: 'Dr. Mauricio Padilla',
+      citizenName: 'Andrés Morales',
+      citizenEmail: 'andres.morales@ejemplo.com',
+      caseId: 'CAS-00130',
+      type: 'review',
+      time: '04:30 p.m.',
+      date: todayStrIso,
+      topic: 'Revisión de caso #00130 (Andrés Morales - Conciliación)'
     }
   ];
 
@@ -1074,10 +1086,15 @@ const PuenteDB = {
 
         return item;
       },
-      getByProf(profEmail) {
+      getByProf(profQuery) {
         const items = this.getAll();
-        const pEmail = (profEmail || '').toLowerCase().trim();
-        return items.filter(i => (i.profEmail || '').toLowerCase().trim() === pEmail);
+        if (!profQuery) return [];
+        const q = profQuery.toLowerCase().trim();
+        return items.filter(i => {
+          const pe = (i.profEmail || '').toLowerCase().trim();
+          const pn = (i.profName || '').toLowerCase().trim();
+          return pe === q || pn === q || (pn && q.includes(pn)) || (pe && q.includes(pe));
+        });
       },
       getByCitizen(citizenEmail) {
         const items = this.getAll();

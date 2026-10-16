@@ -615,8 +615,8 @@ function loadAgendaStore() {
     },
     {
       id: 'EVT-003',
-      profEmail: 'elena.gomez@asesores.org',
-      profName: 'Dra. Elena Gómez',
+      profEmail: 'mauricio.padilla@asesores.org',
+      profName: 'Dr. Mauricio Padilla',
       citizenName: 'Daniela Doria',
       citizenEmail: 'daniela.doria@ejemplo.com',
       caseId: 'CAS-00129',
@@ -624,6 +624,18 @@ function loadAgendaStore() {
       time: '03:00 p.m.',
       date: todayStr,
       topic: 'Videollamada caso #00129 (Daniela Doria - Custodia familiar)'
+    },
+    {
+      id: 'EVT-004',
+      profEmail: 'mauricio.padilla@asesores.org',
+      profName: 'Dr. Mauricio Padilla',
+      citizenName: 'Andrés Morales',
+      citizenEmail: 'andres.morales@ejemplo.com',
+      caseId: 'CAS-00130',
+      type: 'review',
+      time: '04:30 p.m.',
+      date: todayStr,
+      topic: 'Revisión de caso #00130 (Andrés Morales - Conciliación)'
     }
   ];
 }
@@ -641,11 +653,16 @@ function handleAgendaRequest(req, res, parsedUrl) {
 
   if (req.method === 'GET') {
     const profEmail = (parsedUrl.query.profEmail || '').toLowerCase().trim();
+    const profName = (parsedUrl.query.profName || '').toLowerCase().trim();
     const citizenEmail = (parsedUrl.query.citizenEmail || '').toLowerCase().trim();
     let events = loadAgendaStore();
 
-    if (profEmail) {
-      events = events.filter(e => (e.profEmail || '').toLowerCase().trim() === profEmail);
+    if (profEmail || profName) {
+      events = events.filter(e => {
+        const pe = (e.profEmail || '').toLowerCase().trim();
+        const pn = (e.profName || '').toLowerCase().trim();
+        return (profEmail && pe === profEmail) || (profName && pn === profName);
+      });
     }
     if (citizenEmail) {
       events = events.filter(e => (e.citizenEmail || '').toLowerCase().trim() === citizenEmail);

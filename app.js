@@ -766,67 +766,166 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.openNotificationsModal = () => {
-    const isProf = state.currentUser?.role === 'professional';
-    const userName = state.currentUser?.name || (isProf ? 'Profesional' : 'Ciudadano');
+    const user = state.currentUser;
+    const isProf = user?.role === 'professional';
+    const userName = user?.name || (isProf ? 'Profesional' : 'Ciudadano');
+    const userEmail = (user?.email || '').toLowerCase().trim();
+    const uNameLower = (user?.name || '').toLowerCase().trim();
+
+    // 1. Obtener todos los casos del sistema
+    const allCases = (window.PuenteDB?.cases ? window.PuenteDB.cases.getAll() : state.cases) || [];
+
+    // 2. Obtener agenda personal del usuario
+    let myAgenda = [];
+    if (window.PuenteDB?.agenda) {
+      if (isProf) {
+        if (userEmail) myAgenda = window.PuenteDB.agenda.getByProf(userEmail) || [];
+        if (myAgenda.length === 0 && uNameLower) {
+          myAgenda = window.PuenteDB.agenda.getByProf(uNameLower) || [];
+        }
+      } else {
+        if (userEmail) myAgenda = window.PuenteDB.agenda.getByCitizen(userEmail) || [];
+        if (myAgenda.length === 0 && uNameLower) {
+          const allEvts = window.PuenteDB.agenda.getAll() || [];
+          myAgenda = allEvts.filter(e => (e.citizenName || '').toLowerCase().includes(uNameLower));
+        }
+      }
+    }
+
+    let notificationsHtml = '';
+
+    if (isProf) {
+      // Casos asignados a este profesional específico
+      const myCases = allCases.filter(c => {
+        const a = (c.assignedTo || '').toLowerCase().trim();
+        return (uNameLower && (a.includes(uNameLower) || uNameLower.includes(a)));
+      });
+
+      const notifs = [];
+
+      // A. Notificación por cada caso asignado
+      myCases.forEach(c => {
+        notifs.push(`
+          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+            <div>
+              <strong style="color: #166534;"><i class="fas fa-circle-exclamation"></i> Caso Asignado: #${c.id}</strong><br>
+              <small style="color: #15803d;">${c.citizen || 'Ciudadano'} — ${c.subType || c.type || 'Orientación en curso'}</small>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="closeModal(); window.viewCaseDetail('${c.id}')">Ver Caso</button>
+          </div>
+        `);
+      });
+
+      // B. Notificación por citas en la agenda del profesional
+      myAgenda.forEach(evt => {
+        notifs.push(`
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+            <div>
+              <strong style="color: #1e40af;"><i class="fas fa-video"></i> Videollamada: ${evt.time || 'Hoy'}</strong><br>
+              <small style="color: #1d4ed8;">${evt.topic || `Cita caso #${evt.caseId} con ${evt.citizenName}`}</small>
+            </div>
+            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom('${evt.caseId || 'CAS-00138'}')"><i class="fas fa-video"></i> Conectar</button>
+          </div>
+        `);
+      });
+
+      // C. Canal de mensajes activo
+      if (myCases.length > 0) {
+        const firstC = myCases[0];
+        notifs.push(`
+          <div style="background: var(--soft-blue); padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+            <div>
+              <strong style="color: var(--dark-blue);"><i class="fas fa-comment-dots"></i> Canal de Orientación Activo</strong><br>
+              <small style="color: var(--text-dark);">Comunicación directa con ${firstC.citizen} (#${firstC.id})</small>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="closeModal(); window.openMessenger('${firstC.id}')">Responder</button>
+          </div>
+        `);
+      }
+
+      if (notifs.length === 0) {
+        notificationsHtml = `
+          <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+            <i class="fas fa-bell-slash" style="font-size: 2.2rem; color: #cbd5e1; margin-bottom: 0.5rem; display: block;"></i>
+            <p style="margin: 0; font-weight: 600; color: var(--dark-blue);">Bandeja de avisos al día</p>
+            <small>No tienes notificaciones pendientes para tu cuenta profesional.</small>
+          </div>
+        `;
+      } else {
+        notificationsHtml = notifs.join('');
+      }
+
+    } else {
+      // Notificaciones para Ciudadano
+      const myCases = allCases.filter(c => {
+        const ce = (c.citizenEmail || '').toLowerCase().trim();
+        const cn = (c.citizen || '').toLowerCase().trim();
+        return (userEmail && ce === userEmail) || (uNameLower && cn.includes(uNameLower)) || (cn && uNameLower.includes(cn));
+      });
+
+      const notifs = [];
+
+      myCases.forEach(c => {
+        if (c.assignedTo && c.assignedTo !== 'Por asignar') {
+          notifs.push(`
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+              <div>
+                <strong style="color: #166534;"><i class="fas fa-check-circle"></i> Especialista Asignado(a)</strong><br>
+                <small style="color: #15803d;">${c.assignedTo} está orientando tu caso #${c.id}</small>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="closeModal(); window.viewCaseDetail('${c.id}')">Detalles</button>
+            </div>
+          `);
+        }
+        if (c.institution) {
+          notifs.push(`
+            <div style="background: #fefce8; border: 1px solid #fef08a; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+              <div>
+                <strong style="color: #854d0e;"><i class="fas fa-file-contract"></i> Hoja de Ruta ODS 16 Disponible</strong><br>
+                <small style="color: #a16207;">Entidad recomendada: ${c.institution} para el caso #${c.id}</small>
+              </div>
+              <button class="btn btn-primary btn-sm" onclick="closeModal(); window.openRoadmap('${c.id}')">Abrir Guía</button>
+            </div>
+          `);
+        }
+      });
+
+      // Citas de videollamada para el ciudadano
+      myAgenda.forEach(evt => {
+        notifs.push(`
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
+            <div>
+              <strong style="color: #1e40af;"><i class="fas fa-video"></i> Cita Virtual Programada: ${evt.time || 'Hoy'}</strong><br>
+              <small style="color: #1d4ed8;">${evt.topic || 'Consulta virtual con tu especialista'}</small>
+            </div>
+            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom('${evt.caseId || 'CAS-00138'}')"><i class="fas fa-video"></i> Entrar a Sala</button>
+          </div>
+        `);
+      });
+
+      if (notifs.length === 0) {
+        notificationsHtml = `
+          <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+            <i class="fas fa-bell-slash" style="font-size: 2.2rem; color: #cbd5e1; margin-bottom: 0.5rem; display: block;"></i>
+            <p style="margin: 0; font-weight: 600; color: var(--dark-blue);">Bandeja de avisos al día</p>
+            <small>Aquí verás las actualizaciones de tus casos y citas agendadas.</small>
+          </div>
+        `;
+      } else {
+        notificationsHtml = notifs.join('');
+      }
+    }
 
     openModal(`Notificaciones - ${userName}`, `
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-        <span style="font-size: 0.85rem; color: var(--text-muted);">Bandeja de avisos del sistema</span>
+        <span style="font-size: 0.85rem; color: var(--text-muted);">Bandeja de avisos personalizada</span>
         <button class="btn btn-secondary btn-sm" onclick="window.markNotificationsRead()">
           <i class="fas fa-check-double"></i> Marcar todas como leídas
         </button>
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-        ${isProf ? `
-          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="color: #166534;"><i class="fas fa-circle-exclamation"></i> Nuevo Caso Asignado: CAS-00138</strong><br>
-              <small style="color: #15803d;">Mariana Sibaja - Despido laboral sin liquidación</small>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="closeModal(); window.viewCaseDetail('CAS-00138')">Ver Caso</button>
-          </div>
-
-          <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="color: #1e40af;"><i class="fas fa-video"></i> Videollamada Hoy 09:00 a.m.</strong><br>
-              <small style="color: #1d4ed8;">Consulta virtual agendada con Mariana Sibaja</small>
-            </div>
-            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138')"><i class="fas fa-video"></i> Conectar</button>
-          </div>
-
-          <div style="background: var(--soft-blue); padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="color: var(--dark-blue);"><i class="fas fa-comment-dots"></i> Mensaje Recibido</strong><br>
-              <small style="color: var(--text-dark);">Mariana Sibaja adjuntó copia del contrato laboral</small>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="closeModal(); window.openMessagesModal()">Responder</button>
-          </div>
-        ` : `
-          <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="color: #166534;"><i class="fas fa-check-circle"></i> Especialista Asignada</strong><br>
-              <small style="color: #15803d;">La Dra. Elena Gómez ha tomado tu caso #CAS-00138</small>
-            </div>
-            <button class="btn btn-secondary btn-sm" onclick="closeModal(); window.viewCaseDetail('CAS-00138')">Detalles</button>
-          </div>
-
-          <div style="background: #eff6ff; border: 1px solid #bfdbfe; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="color: #1e40af;"><i class="fas fa-video"></i> Cita Virtual Programada</strong><br>
-              <small style="color: #1d4ed8;">Sesión por videollamada para hoy a las 09:00 a.m.</small>
-            </div>
-            <button class="btn btn-turquoise btn-sm" onclick="closeModal(); window.openVirtualRoom(state.activeCaseIdForRoom || state.activeMessengerCaseId || state.cases[0]?.id || 'CAS-00138')"><i class="fas fa-video"></i> Entrar a Sala</button>
-          </div>
-
-          <div style="background: #fefce8; border: 1px solid #fef08a; padding: 0.85rem 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <strong style="color: #854d0e;"><i class="fas fa-file-contract"></i> Hoja de Ruta Lista</strong><br>
-              <small style="color: #a16207;">Guía oficial para Inspección del Trabajo disponible</small>
-            </div>
-            <button class="btn btn-primary btn-sm" onclick="closeModal(); window.openRoadmap('CAS-00138')">Abrir Guía</button>
-          </div>
-        `}
+        ${notificationsHtml}
       </div>
     `);
   };
@@ -1302,24 +1401,31 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!list) return;
 
     const currentProf = state.currentUser;
-    const profEmail = currentProf?.email || 'elena.gomez@asesores.org';
+    const profEmail = (currentProf?.email || '').toLowerCase().trim();
+    const profName = (currentProf?.name || '').toLowerCase().trim();
 
     let events = [];
     if (window.PuenteDB?.agenda) {
-      events = window.PuenteDB.agenda.getByProf(profEmail);
-      if (!events || events.length === 0) {
-        // Fallback para mostrar la agenda de la semilla
-        events = window.PuenteDB.agenda.getAll();
+      if (profEmail) {
+        events = window.PuenteDB.agenda.getByProf(profEmail);
+      }
+      if ((!events || events.length === 0) && profName) {
+        events = window.PuenteDB.agenda.getByProf(profName);
       }
     } else {
-      events = state.agenda || [];
+      events = (state.agenda || []).filter(e => {
+        const pe = (e.profEmail || '').toLowerCase().trim();
+        const pn = (e.profName || '').toLowerCase().trim();
+        return (profEmail && pe === profEmail) || (profName && pn === profName);
+      });
     }
 
     if (!events || events.length === 0) {
       list.innerHTML = `
-        <div style="text-align: center; padding: 1.5rem; color: var(--text-muted);">
-          <i class="fas fa-calendar-xmark" style="font-size: 2rem; color: #cbd5e1; margin-bottom: 0.5rem; display: block;"></i>
-          No tienes videollamadas agendadas para hoy. Haz clic en "Programar video llamada" para agendar una sesión.
+        <div style="text-align: center; padding: 2rem 1rem; color: var(--text-muted);">
+          <i class="fas fa-calendar-xmark" style="font-size: 2.2rem; color: #cbd5e1; margin-bottom: 0.75rem; display: block;"></i>
+          <p style="margin: 0 0 0.5rem 0; font-weight: 600; color: var(--dark-blue);">No tienes videollamadas agendadas para hoy.</p>
+          <small>Haz clic en <strong>"Programar video llamada"</strong> para registrar una nueva cita con uno de tus casos.</small>
         </div>
       `;
       return;
