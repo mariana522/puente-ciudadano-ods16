@@ -912,9 +912,9 @@ const PuenteDB = {
         try {
           const cleanCode = String(caseId).replace(/^#/, '');
           const endpoints = [
-            '/api/mensajes?caso_codigo=' + encodeURIComponent(cleanCode),
-            '/backend/mensajes.php?caso_codigo=' + encodeURIComponent(cleanCode),
-            'backend/mensajes.php?caso_codigo=' + encodeURIComponent(cleanCode)
+            '/api/mensajes?caseId=' + encodeURIComponent(cleanCode) + '&_t=' + Date.now(),
+            '/api/mensajes?caso_codigo=' + encodeURIComponent(cleanCode) + '&_t=' + Date.now(),
+            '/backend/mensajes.php?caso_codigo=' + encodeURIComponent(cleanCode)
           ];
           for (const ep of endpoints) {
             try {
@@ -1040,6 +1040,86 @@ const PuenteDB = {
     // =========================================================================
     
     // =========================================================================
+    // =========================================================================
+    // MOTOR DE POLLING Y SINCRONIZACIÓN AUTOMÁTICA DE CHAT (ODS 16 ROBUSTO)
+    // =========================================================================
+    polling: {
+      intervalId: null,
+      activeCaseId: null,
+      pollingRateMs: 2000, // Consulta cada 2 segundos sin depender de WebSockets
+
+      start() {
+        if (this.intervalId) return;
+        console.log('[PuenteDB Polling] Motor de sincronización automática activo (cada ' + this.pollingRateMs + 'ms)');
+        this.intervalId = setInterval(() => {
+          this.tick();
+        }, this.pollingRateMs);
+        setTimeout(() => this.tick(), 200);
+      },
+
+      stop() {
+        if (this.intervalId) {
+          clearInterval(this.intervalId);
+          this.intervalId = null;
+        }
+      },
+
+      setActiveCase(caseId) {
+        if (!caseId) return;
+        this.activeCaseId = caseId;
+        this.syncCase(caseId, true);
+      },
+
+      async tick() {
+        if (this.activeCaseId) {
+          await this.syncCase(this.activeCaseId, true);
+        } else {
+          const currentUser = PuenteDB.session ? PuenteDB.session.get() : null;
+          if (currentUser) {
+            const userCases = PuenteDB.cases.getByCitizen(currentUser.email).concat(PuenteDB.cases.getByProfessional(currentUser.email));
+            if (userCases.length > 0) {
+              await this.syncCase(userCases[0].id, false);
+            }
+          }
+        }
+      },
+
+      async syncCase(caseId, triggerUi = true) {
+        if (!caseId) return;
+        const cleanCode = String(caseId).toLowerCase().replace(/[^a-z0-9]/g, '');
+        try {
+          const res = await fetch('/api/mensajes?caseId=' + encodeURIComponent(cleanCode) + '&_t=' + Date.now(), {
+            cache: 'no-store'
+          });
+          if (!res.ok) return;
+          const json = await res.json();
+          if (!json || !Array.isArray(json.data)) return;
+
+          const serverMsgs = json.data;
+          const localMsgs = PuenteDB.messages.getByCase(caseId);
+
+          let hasNew = false;
+          let latestNewMsg = null;
+
+          serverMsgs.forEach(sMsg => {
+            const exists = localMsgs.some(lMsg => lMsg.id === sMsg.id);
+            if (!exists) {
+              PuenteDB.messages.insert(caseId, sMsg, false);
+              hasNew = true;
+              latestNewMsg = sMsg;
+            }
+          });
+
+          if (hasNew && triggerUi && PuenteDB.realtime) {
+            console.log('[PuenteDB Polling] Mensaje nuevo sincronizado desde el servidor para #' + caseId);
+            PuenteDB.realtime.notifyListeners('message', latestNewMsg || { caseId });
+          }
+        } catch (e) {
+          // Silencioso ante microcortes de red
+        }
+      }
+    },
+
     // MOTOR EN TIEMPO REAL: SOCKET.IO + BROADCASTCHANNEL BIDIRECCIONAL
     // =========================================================================
     realtime: {
@@ -1162,6 +1242,11 @@ const PuenteDB = {
         if (!caseId) return;
         this.activeCaseId = caseId;
         if (user) this.activeUser = user;
+
+        // Sincronizar de inmediato en el motor de polling
+        if (PuenteDB.polling) {
+          PuenteDB.polling.setActiveCase(caseId);
+        }
 
         if (this.socket && this.socket.connected) {
           this.socket.emit('join_case', { caseId, user: this.activeUser });

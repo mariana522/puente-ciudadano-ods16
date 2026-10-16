@@ -255,7 +255,7 @@ function setCachedRoom(cleanCaseId, roomData) {
   saveRoomsStore(store);
 }
 
-// Manejo de la provisión de salas de videollamada (Daily Prebuilt o Jitsi Meet Libre)
+// Manejo de salas de videollamada públicas y gratuitas con Jitsi Meet
 function handleDailyRoomRequest(req, res, parsedUrl) {
   let body = '';
   req.on('data', chunk => { body += chunk; });
@@ -267,347 +267,50 @@ function handleDailyRoomRequest(req, res, parsedUrl) {
 
     const caseId = data.caseId || parsedUrl.query.caseId || parsedUrl.query.id || 'CAS-00138';
     const cleanCaseId = normalizeCaseId(caseId);
-    const durationMins = parseInt(data.durationMinutes || parsedUrl.query.durationMinutes || (DAILY_EXP_HOURS * 60), 10);
-    const expTimestamp = Math.floor(Date.now() / 1000) + (durationMins * 60);
+    const roomName = 'puente-ciudadano-caso-' + cleanCaseId;
+    const roomUrl = 'https://meet.jit.si/' + roomName;
 
-    const configuredDailyUrl = getDailyRoomUrlConfig();
-    const apiKey = getDailyApiKey();
-    const jitsiDomain = getJitsiDomain();
+    console.log('[Jitsi Meet] Sala generada para caso #' + caseId + ': ' + roomUrl);
 
-    console.log('================================================================');
-    console.log('[VideoCall] Solicitud de sala para caso #' + caseId + ' (ID limpio: ' + cleanCaseId + ')');
-    console.log('[VideoCall] Configuración: DAILY_ROOM_URL=' + (configuredDailyUrl ? configuredDailyUrl : 'No') + ' | JITSI_DOMAIN=' + jitsiDomain);
-    console.log('================================================================');
-
-    // 1. Verificar si ya existe una sala en caché para este caso
-    const cached = getCachedRoom(cleanCaseId);
-    if (cached && cached.roomUrl) {
-      console.log('[VideoCall SUCCESS] Reutilizando sala sincronizada para caso #' + caseId + ': ' + cached.roomUrl);
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
-        success: true,
-        caseId: caseId,
-        roomName: cached.roomName || ('PuenteCiudadano_ODS16_' + cleanCaseId),
-        roomUrl: cached.roomUrl,
-        directJoinUrl: cached.roomUrl,
-        provider: cached.provider || (cached.roomUrl.includes('daily.co') ? 'daily' : 'jitsi'),
-        isFree: true,
-        status: 'synchronized_live',
-        message: 'Sala de videollamada sincronizada para el caso #' + caseId
-      }));
-      return;
-    }
-
-    // 2. Si se configuró una URL fija de Daily Prebuilt (ej: DAILY_ROOM_URL=https://tudominio.daily.co/mi-sala)
-    if (configuredDailyUrl) {
-      console.log('[VideoCall SUCCESS] Usando sala Daily Prebuilt configurada: ' + configuredDailyUrl);
-      setCachedRoom(cleanCaseId, {
-        caseId: caseId,
-        roomName: 'puente-' + cleanCaseId,
-        roomUrl: configuredDailyUrl,
-        provider: 'daily',
-        isLive: true,
-        isFree: true,
-        exp: expTimestamp
-      });
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
-        success: true,
-        caseId: caseId,
-        roomName: 'puente-' + cleanCaseId,
-        roomUrl: configuredDailyUrl,
-        directJoinUrl: configuredDailyUrl,
-        provider: 'daily',
-        isFree: true,
-        status: 'daily_prebuilt_ready',
-        message: 'Sala Daily Prebuilt configurada para el caso #' + caseId
-      }));
-      return;
-    }
-
-    // 3. Si hay API Key de Daily válida y el modo no está forzado a Jitsi, intentar crear en Daily,
-    // pero si falla (ej: tarjeta de crédito requerida o error de plan), hacer fallback inmediato a Jitsi Meet
-    if (isValidDailyKey(apiKey) && process.env.VIDEO_PROVIDER !== 'jitsi') {
-      const roomName = 'puente-' + cleanCaseId;
-      console.log('[VideoCall] Intentando verificar con Daily REST API para "' + roomName + '"...');
-      attemptDailyApiRoom(apiKey, roomName, cleanCaseId, caseId, expTimestamp, jitsiDomain, res);
-      return;
-    }
-
-    // 4. Modo predeterminado libre y universal: Jitsi Meet (Sin requerimiento de tarjeta ni registro)
-    const jitsiRoomName = 'PuenteCiudadano_ODS16_' + cleanCaseId;
-    const jitsiUrl = 'https://' + jitsiDomain + '/' + jitsiRoomName;
-
-    console.log('[VideoCall SUCCESS] Aprovisionando sala Jitsi Meet libre para caso #' + caseId + ': ' + jitsiUrl);
     setCachedRoom(cleanCaseId, {
       caseId: caseId,
-      roomName: jitsiRoomName,
-      roomUrl: jitsiUrl,
+      roomName: roomName,
+      roomUrl: roomUrl,
       provider: 'jitsi',
       isLive: true,
-      isFree: true,
-      exp: expTimestamp
+      isFree: true
     });
 
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate'
+    });
     res.end(JSON.stringify({
       success: true,
       caseId: caseId,
-      roomName: jitsiRoomName,
-      roomUrl: jitsiUrl,
-      directJoinUrl: jitsiUrl,
+      roomName: roomName,
+      roomUrl: roomUrl,
+      directJoinUrl: roomUrl,
       provider: 'jitsi',
       isFree: true,
       status: 'jitsi_ready',
-      message: 'Sala libre Jitsi Meet aprovisionada para el caso #' + caseId
+      message: 'Sala Jitsi Meet libre y gratuita activa para el caso #' + caseId
     }));
   });
-}
-
-function attemptDailyApiRoom(apiKey, roomName, cleanCaseId, caseId, expTimestamp, jitsiDomain, res) {
-  const payload = JSON.stringify({
-    name: roomName,
-    privacy: 'public',
-    properties: {
-      exp: expTimestamp,
-      enable_chat: true,
-      enable_screenshare: true,
-      enable_knocking: false,
-      start_video_off: false,
-      start_audio_off: false,
-      eject_at_room_exp: true,
-      lang: 'es'
-    }
-  });
-
-  const options = {
-    hostname: 'api.daily.co',
-    port: 443,
-    path: '/v1/rooms',
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(payload)
-    }
-  };
-
-  const dailyReq = https.request(options, (dailyRes) => {
-    let respData = '';
-    dailyRes.on('data', chunk => { respData += chunk; });
-    dailyRes.on('end', () => {
-      let parsed = {};
-      try { parsed = JSON.parse(respData); } catch (e) {}
-
-      // Si Daily responde 200 con URL oficial
-      if (dailyRes.statusCode === 200 && parsed.url) {
-        console.log('[Daily.co SUCCESS] ¡Sala oficial creada en Daily.co!: ' + parsed.url);
-        setCachedRoom(cleanCaseId, {
-          caseId: caseId,
-          roomName: parsed.name || roomName,
-          roomUrl: parsed.url,
-          provider: 'daily',
-          isLive: true,
-          exp: expTimestamp
-        });
-
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
-          success: true,
-          caseId: caseId,
-          roomName: parsed.name || roomName,
-          roomUrl: parsed.url,
-          directJoinUrl: parsed.url,
-          provider: 'daily',
-          status: 'created_live',
-          message: 'Sala Daily.co aprovisionada en vivo para el caso #' + caseId
-        }));
-        return;
-      }
-
-      // Si la sala ya existía en Daily (HTTP 400 "already exists")
-      if (dailyRes.statusCode === 400 && respData.includes('already exists')) {
-        console.log('[Daily.co INFO] La sala "' + roomName + '" ya existe en Daily.co. Obteniendo URL canónica...');
-        fetchExistingDailyRoom(apiKey, roomName, cleanCaseId, caseId, expTimestamp, jitsiDomain, res);
-        return;
-      }
-
-      // Si Daily devuelve error de pago o plan (ej: 401, 402, 403, tarjeta requerida):
-      console.warn('[VideoCall AVISO] Daily.co requirió pago o devolvió error (HTTP ' + dailyRes.statusCode + '): ' + respData + '. Conmutando a Jitsi Meet libre...');
-      const jitsiRoomName = 'PuenteCiudadano_ODS16_' + cleanCaseId;
-      const jitsiUrl = 'https://' + jitsiDomain + '/' + jitsiRoomName;
-
-      setCachedRoom(cleanCaseId, {
-        caseId: caseId,
-        roomName: jitsiRoomName,
-        roomUrl: jitsiUrl,
-        provider: 'jitsi',
-        isLive: true,
-        isFree: true,
-        exp: expTimestamp
-      });
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
-        success: true,
-        caseId: caseId,
-        roomName: jitsiRoomName,
-        roomUrl: jitsiUrl,
-        directJoinUrl: jitsiUrl,
-        provider: 'jitsi',
-        isFree: true,
-        status: 'jitsi_fallback_ready',
-        fallbackReason: 'daily_payment_required',
-        message: 'Sala Jitsi Meet libre activada sin costo ni tarjetas para el caso #' + caseId
-      }));
-    });
-  });
-
-  dailyReq.on('error', (err) => {
-    console.warn('[VideoCall AVISO] Error de red con api.daily.co (' + err.message + '). Conmutando a Jitsi Meet libre...');
-    const jitsiRoomName = 'PuenteCiudadano_ODS16_' + cleanCaseId;
-    const jitsiUrl = 'https://' + jitsiDomain + '/' + jitsiRoomName;
-
-    setCachedRoom(cleanCaseId, {
-      caseId: caseId,
-      roomName: jitsiRoomName,
-      roomUrl: jitsiUrl,
-      provider: 'jitsi',
-      isLive: true,
-      isFree: true,
-      exp: expTimestamp
-    });
-
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({
-      success: true,
-      caseId: caseId,
-      roomName: jitsiRoomName,
-      roomUrl: jitsiUrl,
-      directJoinUrl: jitsiUrl,
-      provider: 'jitsi',
-      isFree: true,
-      status: 'jitsi_fallback_ready',
-      message: 'Sala Jitsi Meet libre activada para el caso #' + caseId
-    }));
-  });
-
-  dailyReq.write(payload);
-  dailyReq.end();
-}
-
-function fetchExistingDailyRoom(apiKey, roomName, cleanCaseId, caseId, expTimestamp, jitsiDomain, res) {
-  const options = {
-    hostname: 'api.daily.co',
-    port: 443,
-    path: '/v1/rooms/' + encodeURIComponent(roomName),
-    method: 'GET',
-    headers: {
-      'Authorization': 'Bearer ' + apiKey
-    }
-  };
-
-  const getReq = https.request(options, (getRes) => {
-    let raw = '';
-    getRes.on('data', chunk => { raw += chunk; });
-    getRes.on('end', () => {
-      let parsed = {};
-      try { parsed = JSON.parse(raw); } catch (e) {}
-
-      if (getRes.statusCode === 200 && parsed.url) {
-        console.log('[Daily.co SUCCESS] URL canónica recuperada de Daily.co: ' + parsed.url);
-        setCachedRoom(cleanCaseId, {
-          caseId: caseId,
-          roomName: parsed.name || roomName,
-          roomUrl: parsed.url,
-          provider: 'daily',
-          isLive: true,
-          exp: parsed.properties?.exp || expTimestamp
-        });
-
-        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({
-          success: true,
-          caseId: caseId,
-          roomName: parsed.name || roomName,
-          roomUrl: parsed.url,
-          directJoinUrl: parsed.url,
-          provider: 'daily',
-          status: 'existing_live',
-          message: 'Sala existente sincronizada para el caso #' + caseId
-        }));
-        return;
-      }
-
-      console.warn('[VideoCall AVISO] No se pudo recuperar sala existente en Daily.co. Conmutando a Jitsi Meet libre...');
-      const jitsiRoomName = 'PuenteCiudadano_ODS16_' + cleanCaseId;
-      const jitsiUrl = 'https://' + jitsiDomain + '/' + jitsiRoomName;
-
-      setCachedRoom(cleanCaseId, {
-        caseId: caseId,
-        roomName: jitsiRoomName,
-        roomUrl: jitsiUrl,
-        provider: 'jitsi',
-        isLive: true,
-        isFree: true,
-        exp: expTimestamp
-      });
-
-      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({
-        success: true,
-        caseId: caseId,
-        roomName: jitsiRoomName,
-        roomUrl: jitsiUrl,
-        directJoinUrl: jitsiUrl,
-        provider: 'jitsi',
-        isFree: true,
-        status: 'jitsi_fallback_ready',
-        message: 'Sala Jitsi Meet libre activada para el caso #' + caseId
-      }));
-    });
-  });
-
-  getReq.on('error', (err) => {
-    console.warn('[VideoCall AVISO] Error al consultar sala en Daily. Conmutando a Jitsi Meet libre...');
-    const jitsiRoomName = 'PuenteCiudadano_ODS16_' + cleanCaseId;
-    const jitsiUrl = 'https://' + jitsiDomain + '/' + jitsiRoomName;
-
-    setCachedRoom(cleanCaseId, {
-      caseId: caseId,
-      roomName: jitsiRoomName,
-      roomUrl: jitsiUrl,
-      provider: 'jitsi',
-      isLive: true,
-      isFree: true,
-      exp: expTimestamp
-    });
-
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify({
-      success: true,
-      caseId: caseId,
-      roomName: jitsiRoomName,
-      roomUrl: jitsiUrl,
-      directJoinUrl: jitsiUrl,
-      provider: 'jitsi',
-      isFree: true,
-      status: 'jitsi_fallback_ready',
-      message: 'Sala Jitsi Meet libre activada para el caso #' + caseId
-    }));
-  });
-
-  getReq.end();
 }
 
 
 // Manejo de peticiones de mensajes REST
 function handleMessagesRequest(req, res, parsedUrl) {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+
   if (req.method === 'GET') {
     const caseId = parsedUrl.query.caso_codigo || parsedUrl.query.caseId || parsedUrl.query.id || 'CAS-00138';
     const messages = getMessagesForCase(caseId);
-    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-cache, no-store, must-revalidate'
+    });
     res.end(JSON.stringify({
       success: true,
       caseId: caseId,

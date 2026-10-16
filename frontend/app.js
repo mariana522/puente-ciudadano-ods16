@@ -3143,7 +3143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000);
   }
 
-  // ABRIR SALA VIRTUAL DE ORIENTACIÓN (JITSI MEET LIBRE O DAILY PREBUILT)
+  // ABRIR SALA VIRTUAL DE ORIENTACIÓN (JITSI MEET 100% LIBRE Y GRATUITO)
   window.openVirtualRoom = async (caseId) => {
     state.activeCaseIdForRoom = caseId;
     state.userExplicitlyLeftCall = false;
@@ -3157,6 +3157,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const isProf = state.currentUser?.role === 'professional';
+    const cleanCaseId = String(targetCase.id).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // URL exacta solicitada para 1 clic sin tarjetas ni cuentas:
+    const roomName = 'puente-ciudadano-caso-' + cleanCaseId;
+    const roomUrl = 'https://meet.jit.si/' + roomName;
+    state.activeDailyRoomUrl = roomUrl;
 
     // 1. Títulos y metadatos
     if (vRoomTitle) vRoomTitle.textContent = 'Sala de Orientación Virtual: #' + targetCase.id;
@@ -3170,15 +3176,25 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. Chat contextual de bienvenida
+    // 2. Chat contextual de la sala con historial previo
     const box = document.getElementById('vroomChatMessages');
     if (box) {
-      box.innerHTML = `
-        <div class="chat-msg professional">
-          <strong>${targetCase.assignedTo || 'Dra. Elena Gómez'}:</strong><br>
-          Hola ${targetCase.citizen}, bienvenida(o) a la sesión de orientación jurídica sobre <em>${targetCase.subType || targetCase.type}</em>. Estamos enlazados en videollamada para orientarte ante <strong>${targetCase.institution}</strong>.
-        </div>
-      `;
+      const existingMsgs = window.PuenteDB?.messages.getByCase(targetCase.id) || [];
+      if (existingMsgs.length > 0) {
+        box.innerHTML = existingMsgs.map(m => `
+          <div class="chat-msg ${m.role || 'citizen'}">
+            <strong>${m.sender}:</strong><br>${m.text}
+          </div>
+        `).join('');
+      } else {
+        box.innerHTML = `
+          <div class="chat-msg professional">
+            <strong>${targetCase.assignedTo || 'Dra. Elena Gómez'}:</strong><br>
+            Hola ${targetCase.citizen}, bienvenida(o) a la sesión de orientación jurídica sobre <em>${targetCase.subType || targetCase.type}</em>. Estamos conectados en videollamada para orientarte ante <strong>${targetCase.institution}</strong>.
+          </div>
+        `;
+      }
+      box.scrollTop = box.scrollHeight;
     }
 
     // 3. Abrir modal
@@ -3196,52 +3212,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (virtualRoomModal) { virtualRoomModal.classList.add('active'); virtualRoomModal.style.display = 'flex'; }
 
-    // 4. Unirse a la sala de WebSockets para este caso
-    if (window.PuenteDB && window.PuenteDB.realtime) {
+    // 4. Activar caso en el motor de sincronización polling
+    if (window.PuenteDB?.polling) {
+      window.PuenteDB.polling.setActiveCase(targetCase.id);
+    }
+    if (window.PuenteDB?.realtime) {
       window.PuenteDB.realtime.joinCase(targetCase.id, state.currentUser);
     }
 
-    // 5. Obtener URL de la sala de videollamada
-    if (dailyRoomUrlText) {
-      dailyRoomUrlText.textContent = 'Aprovisionando videollamada...';
-      dailyRoomUrlText.style.color = '#38bdf8';
-    }
-
-    const cleanCaseId = String(targetCase.id).toLowerCase().replace(/[^a-z0-9]/g, '');
-    let roomUrl = '';
-    let provider = 'jitsi';
-
-    // Verificar si hay una URL personalizada guardada en localStorage
-    try {
-      const savedCustom = localStorage.getItem('puente_custom_room_' + cleanCaseId);
-      if (savedCustom) roomUrl = savedCustom;
-    } catch (e) {}
-
-    if (!roomUrl) {
-      try {
-        const resp = await fetch('/api/daily_room?caseId=' + encodeURIComponent(targetCase.id) + '&citizen=' + encodeURIComponent(targetCase.citizen) + '&professional=' + encodeURIComponent(targetCase.assignedTo));
-        const json = await resp.json();
-        if (json && json.roomUrl) {
-          roomUrl = json.roomUrl;
-          provider = json.provider || (roomUrl.includes('daily.co') ? 'daily' : 'jitsi');
-        }
-      } catch (err) {
-        console.warn('[VideoCall] No se pudo obtener del backend, usando fallback local libre:', err);
-      }
-    }
-
-    // Fallback garantizado libre si la red backend falla
-    if (!roomUrl) {
-      roomUrl = 'https://meet.jit.si/PuenteCiudadano_ODS16_' + cleanCaseId;
-      provider = 'jitsi';
-    }
-
-    state.activeDailyRoomUrl = roomUrl;
-
+    // 5. Enlace visible y botones de 1 clic
     if (dailyRoomUrlText) {
       dailyRoomUrlText.textContent = roomUrl;
       dailyRoomUrlText.style.color = '#38bdf8';
-      dailyRoomUrlText.title = "Enlace oficial sincronizado. Clic para copiar.";
+      dailyRoomUrlText.title = "Enlace Jitsi Meet sincronizado. Clic para copiar.";
       dailyRoomUrlText.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
           showToast('Enlace de la videollamada copiado al portapapeles.', 'success');
@@ -3252,7 +3235,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCopyDailyUrl) {
       btnCopyDailyUrl.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
-          showToast('Enlace de la sala para el caso #' + targetCase.id + ' copiado al portapapeles.', 'success');
+          showToast('Enlace de la sala Jitsi copiado al portapapeles.', 'success');
         });
       };
     }
@@ -3263,13 +3246,9 @@ document.addEventListener('DOMContentLoaded', () => {
       btnOpenExt.style.display = 'inline-flex';
     }
 
-    // 6. Incrustar contenedor de Videollamada (Daily Prebuilt o Jitsi Meet Libre)
+    // 6. Montar componente Jitsi Meet
     const mount = document.getElementById('dailyIframeMount');
     if (mount) {
-      if (state.dailyCallFrame) {
-        try { state.dailyCallFrame.destroy(); } catch (e) {}
-        state.dailyCallFrame = null;
-      }
       if (state.jitsiApi) {
         try { state.jitsiApi.dispose(); } catch (e) {}
         state.jitsiApi = null;
@@ -3277,140 +3256,74 @@ document.addEventListener('DOMContentLoaded', () => {
       mount.innerHTML = '';
 
       const userName = state.currentUser?.name || (isProf ? 'Dra. Elena Gómez' : 'Mariana Sibaja');
-      const isDaily = roomUrl.includes('daily.co');
+      console.log('[Jitsi Meet] Conectando a sala:', roomUrl);
 
-      // CASO A: Daily Prebuilt (si se configuró una URL de Daily.co)
-      if (isDaily) {
-        const dailyFactory = window.DailyIframe || window.Daily;
-        if (dailyFactory && typeof dailyFactory.createFrame === 'function') {
-          try {
-            const callFrame = dailyFactory.createFrame(mount, {
-              iframeStyle: {
-                width: '100%',
-                height: '100%',
-                minHeight: '440px',
-                border: 'none',
-                borderRadius: '8px',
-                backgroundColor: '#020617'
-              },
-              showLeaveButton: false,
-              showFullscreenButton: true
-            });
+      let jitsiReady = false;
+      if (typeof window.JitsiMeetExternalAPI === 'function') {
+        try {
+          const api = new window.JitsiMeetExternalAPI('meet.jit.si', {
+            roomName: roomName,
+            width: '100%',
+            height: '100%',
+            parentNode: mount,
+            userInfo: {
+              displayName: userName,
+              email: state.currentUser?.email || (isProf ? 'elena.gomez@asesores.org' : 'mariana.sibaja@ejemplo.com')
+            },
+            configOverwrite: {
+              startWithAudioMuted: false,
+              startWithVideoMuted: false,
+              prejoinPageEnabled: false,
+              enableWelcomePage: false,
+              disableDeepLinking: true
+            },
+            interfaceConfigOverwrite: {
+              SHOW_JITSI_WATERMARK: false,
+              SHOW_WATERMARK_FOR_GUESTS: false,
+              TOOLBAR_BUTTONS: [
+                'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+                'fodeviceselection', 'hangup', 'chat', 'settings', 'raisehand',
+                'videoquality', 'tileview', 'videobackgroundblur'
+              ]
+            }
+          });
 
-            state.dailyCallFrame = callFrame;
+          state.jitsiApi = api;
 
-            callFrame.on('joined-meeting', (event) => {
-              console.log('[Daily.co] Conectado exitosamente:', roomUrl, event);
-              showToast('Conectado a la videollamada (#' + targetCase.id + ')', 'success');
-              updateDailyRoomParticipantCount(callFrame);
-            });
+          api.addEventListener('videoConferenceJoined', () => {
+            console.log('[Jitsi Meet] Conferencia unida exitosamente');
+            showToast('Conectado a la videollamada Jitsi Meet (#' + targetCase.id + ')', 'success');
+          });
 
-            callFrame.on('track-started', (event) => {
-              if (!event.participant?.local) handleRemoteDailyTrack(event);
-              updateDailyRoomParticipantCount(callFrame);
-            });
+          api.addEventListener('participantJoined', (p) => {
+            showToast((p.displayName || 'La contraparte') + ' se ha unido a la sala.', 'success');
+          });
 
-            callFrame.on('track-stopped', (event) => {
-              if (!event.participant?.local) handleRemoteDailyTrackStopped(event);
-              updateDailyRoomParticipantCount(callFrame);
-            });
+          api.addEventListener('participantLeft', (p) => {
+            showToast((p.displayName || 'El participante') + ' ha salido de la sala.', 'info');
+          });
 
-            callFrame.on('participant-joined', (event) => {
-              const pName = event.participant?.user_name || 'La contraparte';
-              showToast(pName + ' se ha unido a la videollamada.', 'success');
-              updateDailyRoomParticipantCount(callFrame);
-            });
+          api.addEventListener('readyToClose', () => {
+            window.leaveDailyCall();
+          });
 
-            callFrame.on('participant-left', (event) => {
-              const pName = event.participant?.user_name || 'El participante';
-              showToast(pName + ' ha abandonado la sala.', 'info');
-              updateDailyRoomParticipantCount(callFrame);
-            });
-
-            callFrame.on('left-meeting', () => {
-              if (state.userExplicitlyLeftCall) window.leaveDailyCall();
-            });
-
-            await callFrame.join({
-              url: roomUrl,
-              userName: userName
-            });
-          } catch (err) {
-            console.warn('[Daily.co] Error al inicializar CallFrame, usando iframe estándar:', err);
-            mountEmbedIframe(mount, roomUrl);
-          }
-        } else {
-          mountEmbedIframe(mount, roomUrl);
+          jitsiReady = true;
+        } catch (err) {
+          console.warn('[Jitsi API] Fallo al usar JitsiMeetExternalAPI, usando iframe directo:', err);
         }
-      } 
-      // CASO B: Jitsi Meet (Predeterminado 100% Libre y Sin Tarjeta)
-      else {
-        console.log('[Jitsi Meet] Inicializando videollamada libre para:', roomUrl);
-        let jitsiOk = false;
+      }
 
-        if (typeof window.JitsiMeetExternalAPI === 'function') {
-          try {
-            const parsed = new URL(roomUrl);
-            const domain = parsed.host;
-            const jRoomName = parsed.pathname.replace(/^\//, '');
-
-            const api = new window.JitsiMeetExternalAPI(domain, {
-              roomName: jRoomName,
-              width: '100%',
-              height: '100%',
-              parentNode: mount,
-              userInfo: {
-                displayName: userName,
-                email: state.currentUser?.email || (isProf ? 'elena.gomez@asesores.org' : 'mariana.sibaja@ejemplo.com')
-              },
-              configOverwrite: {
-                startWithAudioMuted: false,
-                startWithVideoMuted: false,
-                prejoinPageEnabled: false,
-                enableWelcomePage: false,
-                disableDeepLinking: true
-              },
-              interfaceConfigOverwrite: {
-                SHOW_JITSI_WATERMARK: false,
-                SHOW_WATERMARK_FOR_GUESTS: false,
-                TOOLBAR_BUTTONS: [
-                  'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-                  'fodeviceselection', 'hangup', 'chat', 'settings', 'raisehand',
-                  'videoquality', 'tileview', 'videobackgroundblur'
-                ]
-              }
-            });
-
-            state.jitsiApi = api;
-
-            api.addEventListener('videoConferenceJoined', () => {
-              console.log('[Jitsi Meet] Conferencia unida exitosamente');
-              showToast('Conectado a la videollamada libre (#' + targetCase.id + ')', 'success');
-            });
-
-            api.addEventListener('participantJoined', (p) => {
-              showToast((p.displayName || 'La contraparte') + ' se ha unido a la sala.', 'success');
-            });
-
-            api.addEventListener('participantLeft', (p) => {
-              showToast((p.displayName || 'El participante') + ' ha abandonado la sala.', 'info');
-            });
-
-            api.addEventListener('readyToClose', () => {
-              window.leaveDailyCall();
-            });
-
-            jitsiOk = true;
-          } catch (e) {
-            console.warn('[Jitsi API] Fallo constructor JitsiMeetExternalAPI, usando iframe directo:', e);
-          }
-        }
-
-        if (!jitsiOk) {
-          const directSrc = roomUrl + '#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=' + encodeURIComponent(userName);
-          mountEmbedIframe(mount, directSrc);
-          showToast('Conectado a la videollamada libre (#' + targetCase.id + ')', 'success');
-        }
+      if (!jitsiReady) {
+        mount.innerHTML = `
+          <iframe 
+            id="jitsiMeetDirectFrame"
+            src="${roomUrl}#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=${encodeURIComponent(userName)}" 
+            allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; clipboard-write *" 
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
+            style="width: 100%; height: 100%; min-height: 480px; border: none; border-radius: 8px; background: #0b0f19;"
+          ></iframe>
+        `;
+        showToast('Conectado a la videollamada Jitsi Meet (#' + targetCase.id + ')', 'success');
       }
     }
   };

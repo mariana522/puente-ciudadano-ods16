@@ -175,7 +175,7 @@ if ($hasValidKey) {
 }
 
 // 3. Fallback automático y libre a Jitsi Meet (Sin requerimiento de tarjeta ni costo)
-$jitsiRoomName = 'PuenteCiudadano_ODS16_' . $cleanCaseId;
+$jitsiRoomName = 'puente-ciudadano-caso-' . $cleanCaseId;
 $roomUrl = "https://{$jitsiDomain}/{$jitsiRoomName}";
 saveRoomToCase($caseId, $roomUrl);
 
