@@ -7,6 +7,32 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <title>ODS 16 - Puente de Orientación Ciudadana | Paz, Justicia e Instituciones Sólidas</title>
+  <!-- Configuración Dinámica de Entorno y Red (Render / Localhost / Cloud) -->
+  <script>
+    window.PUENTE_CONFIG = {
+      getServerUrl: function() {
+        if (window.SERVER_URL) return window.SERVER_URL.replace(/\/+$/, '');
+        if (window.SOCKET_URL) return window.SOCKET_URL.replace(/\/+$/, '');
+        if (typeof window !== 'undefined' && window.location) {
+          // Si estamos en Render o dominio cloud (puente-ciudadano-ods16.onrender.com)
+          if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            return window.location.origin;
+          }
+          // En localhost durante desarrollo local
+          return (window.location.port === '3001') ? window.location.origin : 'http://localhost:3001';
+        }
+        return 'http://localhost:3001';
+      },
+      getApiUrl: function(endpoint) {
+        const base = this.getServerUrl();
+        const cleanEndpoint = String(endpoint || '').replace(/^\/+/, '');
+        return base + '/' + cleanEndpoint;
+      }
+    };
+    window.SOCKET_URL = window.PUENTE_CONFIG.getServerUrl();
+    window.PUENTE_API_BASE = window.PUENTE_CONFIG.getServerUrl();
+    console.log('[ODS 16 Config] Servidor Backend Dinámico Activo:', window.PUENTE_CONFIG.getServerUrl());
+  </script>
   <meta name="description" content="Plataforma web accesible que actúa como puente de comunicación y orientación entre ciudadanos, profesionales e instituciones públicas dentro del marco del ODS 16.">
   
   <!-- Google Fonts: Plus Jakarta Sans & Outfit -->

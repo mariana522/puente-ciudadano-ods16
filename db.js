@@ -910,10 +910,13 @@ const PuenteDB = {
           PuenteDB.realtime.broadcastMessage(record);
         }
 
-        // Persistir en backend si está disponible
+        // Persistir en backend central usando URL dinámica del entorno
         if (shouldBroadcast) {
           try {
-            fetch('/api/mensajes', {
+            const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+              ? window.PUENTE_CONFIG.getApiUrl('api/mensajes')
+              : '/api/mensajes';
+            fetch(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(record)
@@ -1111,7 +1114,10 @@ const PuenteDB = {
         try {
           let serverCases = null;
           try {
-            const res = await fetch('/api/casos', { cache: 'no-cache' });
+            const base = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+              ? window.PUENTE_CONFIG.getServerUrl()
+              : '';
+            const res = await fetch(base + '/api/casos?_t=' + Date.now(), { cache: 'no-cache' });
             if (res.ok) {
               const json = await res.json();
               if (json.success && Array.isArray(json.data)) serverCases = json.data;
@@ -1160,9 +1166,11 @@ const PuenteDB = {
         if (!caseId) return;
         const cleanCode = String(caseId).toLowerCase().replace(/[^a-z0-9]/g, '');
         try {
-          const res = await fetch('/api/mensajes?caseId=' + encodeURIComponent(cleanCode) + '&_t=' + Date.now(), {
-            cache: 'no-store'
-          });
+          const base = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+            ? window.PUENTE_CONFIG.getServerUrl()
+            : '';
+          const url = base + '/api/mensajes?caseId=' + encodeURIComponent(cleanCode) + '&_t=' + Date.now();
+          const res = await fetch(url, { cache: 'no-store' });
           if (!res.ok) return;
           const json = await res.json();
           if (!json || !Array.isArray(json.data)) return;
@@ -1224,17 +1232,20 @@ const PuenteDB = {
         // 2. WebSockets vía Socket.io (red y multiplataforma en Render y Local)
         if (typeof io !== 'undefined') {
           try {
-            // Resolver URL dinámicamente según el entorno
+            // Resolver URL dinámicamente según el entorno (Render Cloud / Red Remota / Local)
             let socketUrl;
             if (typeof window !== 'undefined') {
-              if (window.SOCKET_URL) {
+              if (window.PUENTE_CONFIG) {
+                socketUrl = window.PUENTE_CONFIG.getServerUrl();
+              } else if (window.SERVER_URL) {
+                socketUrl = window.SERVER_URL;
+              } else if (window.SOCKET_URL) {
                 socketUrl = window.SOCKET_URL;
-              } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-                // Si corre localmente bajo puerto 3001 o LiveServer 5500
-                socketUrl = (window.location.port === '3001') ? window.location.origin : 'http://localhost:3001';
-              } else {
-                // En Render o servidor cloud, Socket.io opera sobre el mismo origen público HTTPS/WSS
+              } else if (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                // En Render (https://puente-ciudadano-ods16.onrender.com) usa automáticamente window.location.origin
                 socketUrl = window.location.origin;
+              } else {
+                socketUrl = (window.location.port === '3001') ? window.location.origin : 'http://localhost:3001';
               }
             } else {
               socketUrl = 'http://localhost:3001';
@@ -1372,6 +1383,9 @@ const PuenteDB = {
     },
     mysql: {
       getUrl(endpoint) {
+        if (typeof window !== 'undefined' && window.PUENTE_CONFIG) {
+          return window.PUENTE_CONFIG.getApiUrl(endpoint);
+        }
         if (typeof window !== 'undefined' && window.PUENTE_API_BASE) {
           return `${window.PUENTE_API_BASE.replace(/\/+$/, '')}/${endpoint}`;
         }
@@ -1476,7 +1490,10 @@ const PuenteDB = {
 
       async createCase(caseData) {
         try {
-          const res = await fetch('/api/casos', {
+          const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+            ? window.PUENTE_CONFIG.getApiUrl('api/casos')
+            : '/api/casos';
+          const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(caseData)
@@ -1511,7 +1528,10 @@ const PuenteDB = {
 
       async claimCase(caseId, profName, profEmail = '') {
         try {
-          const res = await fetch('/api/casos?action=claim', {
+          const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+            ? window.PUENTE_CONFIG.getApiUrl('api/casos?action=claim')
+            : '/api/casos?action=claim';
+          const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ caseId, profName, profEmail })

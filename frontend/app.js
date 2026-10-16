@@ -1238,7 +1238,10 @@ document.addEventListener('DOMContentLoaded', () => {
       state.cases = window.PuenteDB.cases.getAll();
     }
     try {
-      await fetch('/api/casos?action=claim', {
+      const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+        ? window.PUENTE_CONFIG.getApiUrl('api/casos?action=claim')
+        : '/api/casos?action=claim';
+      await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caseId, profName: currentProf.name, profEmail: currentProf.email })
@@ -1836,12 +1839,26 @@ document.addEventListener('DOMContentLoaded', () => {
       date: new Date().toISOString().split('T')[0]
     };
 
-    // Guardar y transmitir instantaneamente via WebSockets + BroadcastChannel
+    input.value = '';
+
+    // 1. Guardar de inmediato localmente
     if (window.PuenteDB?.messages) {
       window.PuenteDB.messages.insert(caseId, newMsg, true);
     }
 
-    input.value = '';
+    // 2. Guardar DIRECTAMENTE en el backend de Render con URL dinámica
+    try {
+      const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+        ? window.PUENTE_CONFIG.getApiUrl('api/mensajes')
+        : '/api/mensajes';
+      await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMsg)
+      });
+    } catch (err) {
+      console.warn('[Messenger] Error enviando mensaje a BD:', err);
+    }
 
     // Refrescar hilo de mensajes y lista de conversaciones localmente
     window.renderMessengerThread(caseId);
@@ -3582,9 +3599,12 @@ document.addEventListener('DOMContentLoaded', () => {
       window.PuenteDB.messages.insert(caseId, newMsg, true);
     }
 
-    // 2. Persistir directamente en el servidor central por POST
+    // 2. Persistir directamente en el servidor central usando URL dinámica
     try {
-      await fetch('/api/mensajes', {
+      const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+        ? window.PUENTE_CONFIG.getApiUrl('api/mensajes')
+        : '/api/mensajes';
+      await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newMsg)
