@@ -3143,7 +3143,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 1000);
   }
 
-  // ABRIR SALA VIRTUAL Y CONECTAR DAILY.CO (API REAL Y SIN SIMULACIONES FALSAS)
+  // ABRIR SALA VIRTUAL DE ORIENTACIÓN (JITSI MEET LIBRE O DAILY PREBUILT)
   window.openVirtualRoom = async (caseId) => {
     state.activeCaseIdForRoom = caseId;
     state.userExplicitlyLeftCall = false;
@@ -3176,7 +3176,7 @@ document.addEventListener('DOMContentLoaded', () => {
       box.innerHTML = `
         <div class="chat-msg professional">
           <strong>${targetCase.assignedTo || 'Dra. Elena Gómez'}:</strong><br>
-          Hola ${targetCase.citizen}, bienvenida(o) a la sesión de orientación jurídica sobre <em>${targetCase.subType || targetCase.type}</em>. Estamos enlazados mediante Daily.co para orientarte ante <strong>${targetCase.institution}</strong>.
+          Hola ${targetCase.citizen}, bienvenida(o) a la sesión de orientación jurídica sobre <em>${targetCase.subType || targetCase.type}</em>. Estamos enlazados en videollamada para orientarte ante <strong>${targetCase.institution}</strong>.
         </div>
       `;
     }
@@ -3201,72 +3201,39 @@ document.addEventListener('DOMContentLoaded', () => {
       window.PuenteDB.realtime.joinCase(targetCase.id, state.currentUser);
     }
 
-    // 5. Solicitar sala real al backend de Daily.co
+    // 5. Obtener URL de la sala de videollamada
     if (dailyRoomUrlText) {
-      dailyRoomUrlText.textContent = 'Aprovisionando sala en Daily.co...';
+      dailyRoomUrlText.textContent = 'Aprovisionando videollamada...';
       dailyRoomUrlText.style.color = '#38bdf8';
     }
 
+    const cleanCaseId = String(targetCase.id).toLowerCase().replace(/[^a-z0-9]/g, '');
     let roomUrl = '';
-    let apiError = null;
+    let provider = 'jitsi';
 
+    // Verificar si hay una URL personalizada guardada en localStorage
     try {
-      const resp = await fetch(`/api/daily_room?caseId=${encodeURIComponent(targetCase.id)}&citizen=${encodeURIComponent(targetCase.citizen)}&professional=${encodeURIComponent(targetCase.assignedTo)}`);
-      const json = await resp.json();
+      const savedCustom = localStorage.getItem('puente_custom_room_' + cleanCaseId);
+      if (savedCustom) roomUrl = savedCustom;
+    } catch (e) {}
 
-      if (json && json.success && json.roomUrl) {
-        roomUrl = json.roomUrl;
-      } else {
-        apiError = json;
+    if (!roomUrl) {
+      try {
+        const resp = await fetch('/api/daily_room?caseId=' + encodeURIComponent(targetCase.id) + '&citizen=' + encodeURIComponent(targetCase.citizen) + '&professional=' + encodeURIComponent(targetCase.assignedTo));
+        const json = await resp.json();
+        if (json && json.roomUrl) {
+          roomUrl = json.roomUrl;
+          provider = json.provider || (roomUrl.includes('daily.co') ? 'daily' : 'jitsi');
+        }
+      } catch (err) {
+        console.warn('[VideoCall] No se pudo obtener del backend, usando fallback local libre:', err);
       }
-    } catch (err) {
-      apiError = {
-        error: 'NETWORK_ERROR',
-        message: 'No se pudo conectar con el servidor backend: ' + err.message
-      };
     }
 
-    const mount = document.getElementById('dailyIframeMount');
-
-    // SI FALLA LA SALA REAL EN DAILY.CO: Mostrar error explícito en la interfaz SIN crear salas locales falsas
+    // Fallback garantizado libre si la red backend falla
     if (!roomUrl) {
-      console.error('[Daily.co ERROR] No se pudo aprovisionar la sala real:', apiError);
-
-      const errorTitle = apiError?.error === 'DAILY_API_KEY_MISSING'
-        ? 'Clave de Daily.co No Configurada en Render'
-        : 'Error al Conectar con Daily.co';
-
-      const errorMsg = apiError?.message || 'No se pudo generar la sala oficial en Daily.co.';
-      const hintMsg = apiError?.hint || 'Verifica que la variable de entorno DAILY_API_KEY esté correctamente configurada en Render Dashboard -> Environment.';
-
-      if (dailyRoomUrlText) {
-        dailyRoomUrlText.textContent = 'Error: ' + (apiError?.error || 'DAILY_ERROR');
-        dailyRoomUrlText.style.color = '#ef4444';
-      }
-
-      if (mount) {
-        mount.innerHTML = `
-          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 420px; background: #0f172a; border-radius: 8px; padding: 2.5rem 1.5rem; text-align: center; color: #ffffff;">
-            <div style="width: 68px; height: 68px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 2px solid #ef4444; display: flex; align-items: center; justify-content: center; font-size: 2rem; color: #ef4444; margin-bottom: 1.25rem;">
-              <i class="fas fa-exclamation-triangle"></i>
-            </div>
-            <h4 style="margin: 0 0 0.6rem 0; color: #f87171; font-size: 1.25rem; font-weight: 700;">${errorTitle}</h4>
-            <p style="color: #cbd5e1; max-width: 540px; font-size: 0.92rem; line-height: 1.55; margin-bottom: 1.2rem;">
-              ${errorMsg}
-            </p>
-            <div style="background: rgba(30, 41, 59, 0.95); border: 1px solid #0284c7; border-radius: 8px; padding: 0.9rem 1.25rem; font-size: 0.82rem; color: #cbd5e1; max-width: 560px; margin-bottom: 1.5rem; text-align: left; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
-              <strong style="color: #38bdf8;"><i class="fas fa-info-circle"></i> Instrucción de configuración:</strong><br>
-              <span style="line-height: 1.45; display: block; margin-top: 4px;">${hintMsg}</span>
-            </div>
-            <div style="display: flex; gap: 0.75rem;">
-              <button class="btn btn-secondary" onclick="window.leaveDailyCall()"><i class="fas fa-arrow-left"></i> Volver al panel</button>
-              <button class="btn btn-turquoise" onclick="window.openVirtualRoom('${targetCase.id}')"><i class="fas fa-redo"></i> Reintentar conexión</button>
-            </div>
-          </div>
-        `;
-      }
-      showToast('Error en Daily.co: ' + errorMsg, 'error');
-      return;
+      roomUrl = 'https://meet.jit.si/PuenteCiudadano_ODS16_' + cleanCaseId;
+      provider = 'jitsi';
     }
 
     state.activeDailyRoomUrl = roomUrl;
@@ -3274,10 +3241,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (dailyRoomUrlText) {
       dailyRoomUrlText.textContent = roomUrl;
       dailyRoomUrlText.style.color = '#38bdf8';
-      dailyRoomUrlText.title = "Sala oficial Daily.co sincronizada para este expediente. Haz clic para copiar.";
+      dailyRoomUrlText.title = "Enlace oficial sincronizado. Clic para copiar.";
       dailyRoomUrlText.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
-          showToast('Enlace de la videollamada Daily.co copiado al portapapeles.', 'success');
+          showToast('Enlace de la videollamada copiado al portapapeles.', 'success');
         });
       };
     }
@@ -3285,107 +3252,180 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnCopyDailyUrl) {
       btnCopyDailyUrl.onclick = () => {
         navigator.clipboard.writeText(roomUrl).then(() => {
-          showToast('Enlace de la sala Daily.co para el caso #' + targetCase.id + ' copiado al portapapeles.', 'success');
+          showToast('Enlace de la sala para el caso #' + targetCase.id + ' copiado al portapapeles.', 'success');
         });
       };
     }
 
-    // 6. Incrustar Daily CallFrame con la URL REAL de Daily.co
+    const btnOpenExt = document.getElementById('btnOpenExternalRoom');
+    if (btnOpenExt) {
+      btnOpenExt.href = roomUrl;
+      btnOpenExt.style.display = 'inline-flex';
+    }
+
+    // 6. Incrustar contenedor de Videollamada (Daily Prebuilt o Jitsi Meet Libre)
+    const mount = document.getElementById('dailyIframeMount');
     if (mount) {
       if (state.dailyCallFrame) {
         try { state.dailyCallFrame.destroy(); } catch (e) {}
         state.dailyCallFrame = null;
       }
+      if (state.jitsiApi) {
+        try { state.jitsiApi.dispose(); } catch (e) {}
+        state.jitsiApi = null;
+      }
       mount.innerHTML = '';
 
       const userName = state.currentUser?.name || (isProf ? 'Dra. Elena Gómez' : 'Mariana Sibaja');
-      const dailyFactory = window.DailyIframe || window.Daily;
+      const isDaily = roomUrl.includes('daily.co');
 
-      if (dailyFactory && typeof dailyFactory.createFrame === 'function') {
-        try {
-          const callFrame = dailyFactory.createFrame(mount, {
-            iframeStyle: {
+      // CASO A: Daily Prebuilt (si se configuró una URL de Daily.co)
+      if (isDaily) {
+        const dailyFactory = window.DailyIframe || window.Daily;
+        if (dailyFactory && typeof dailyFactory.createFrame === 'function') {
+          try {
+            const callFrame = dailyFactory.createFrame(mount, {
+              iframeStyle: {
+                width: '100%',
+                height: '100%',
+                minHeight: '440px',
+                border: 'none',
+                borderRadius: '8px',
+                backgroundColor: '#020617'
+              },
+              showLeaveButton: false,
+              showFullscreenButton: true
+            });
+
+            state.dailyCallFrame = callFrame;
+
+            callFrame.on('joined-meeting', (event) => {
+              console.log('[Daily.co] Conectado exitosamente:', roomUrl, event);
+              showToast('Conectado a la videollamada (#' + targetCase.id + ')', 'success');
+              updateDailyRoomParticipantCount(callFrame);
+            });
+
+            callFrame.on('track-started', (event) => {
+              if (!event.participant?.local) handleRemoteDailyTrack(event);
+              updateDailyRoomParticipantCount(callFrame);
+            });
+
+            callFrame.on('track-stopped', (event) => {
+              if (!event.participant?.local) handleRemoteDailyTrackStopped(event);
+              updateDailyRoomParticipantCount(callFrame);
+            });
+
+            callFrame.on('participant-joined', (event) => {
+              const pName = event.participant?.user_name || 'La contraparte';
+              showToast(pName + ' se ha unido a la videollamada.', 'success');
+              updateDailyRoomParticipantCount(callFrame);
+            });
+
+            callFrame.on('participant-left', (event) => {
+              const pName = event.participant?.user_name || 'El participante';
+              showToast(pName + ' ha abandonado la sala.', 'info');
+              updateDailyRoomParticipantCount(callFrame);
+            });
+
+            callFrame.on('left-meeting', () => {
+              if (state.userExplicitlyLeftCall) window.leaveDailyCall();
+            });
+
+            await callFrame.join({
+              url: roomUrl,
+              userName: userName
+            });
+          } catch (err) {
+            console.warn('[Daily.co] Error al inicializar CallFrame, usando iframe estándar:', err);
+            mountEmbedIframe(mount, roomUrl);
+          }
+        } else {
+          mountEmbedIframe(mount, roomUrl);
+        }
+      } 
+      // CASO B: Jitsi Meet (Predeterminado 100% Libre y Sin Tarjeta)
+      else {
+        console.log('[Jitsi Meet] Inicializando videollamada libre para:', roomUrl);
+        let jitsiOk = false;
+
+        if (typeof window.JitsiMeetExternalAPI === 'function') {
+          try {
+            const parsed = new URL(roomUrl);
+            const domain = parsed.host;
+            const jRoomName = parsed.pathname.replace(/^\//, '');
+
+            const api = new window.JitsiMeetExternalAPI(domain, {
+              roomName: jRoomName,
               width: '100%',
               height: '100%',
-              minHeight: '440px',
-              border: 'none',
-              borderRadius: '8px',
-              backgroundColor: '#020617'
-            },
-            showLeaveButton: false,
-            showFullscreenButton: true
-          });
+              parentNode: mount,
+              userInfo: {
+                displayName: userName,
+                email: state.currentUser?.email || (isProf ? 'elena.gomez@asesores.org' : 'mariana.sibaja@ejemplo.com')
+              },
+              configOverwrite: {
+                startWithAudioMuted: false,
+                startWithVideoMuted: false,
+                prejoinPageEnabled: false,
+                enableWelcomePage: false,
+                disableDeepLinking: true
+              },
+              interfaceConfigOverwrite: {
+                SHOW_JITSI_WATERMARK: false,
+                SHOW_WATERMARK_FOR_GUESTS: false,
+                TOOLBAR_BUTTONS: [
+                  'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
+                  'fodeviceselection', 'hangup', 'chat', 'settings', 'raisehand',
+                  'videoquality', 'tileview', 'videobackgroundblur'
+                ]
+              }
+            });
 
-          state.dailyCallFrame = callFrame;
+            state.jitsiApi = api;
 
-          callFrame.on('joined-meeting', (event) => {
-            console.log('[Daily.co] Conectado exitosamente a la sala oficial:', roomUrl, event);
-            showToast('Conectado a la videollamada Daily.co (#' + targetCase.id + ')', 'success');
-            updateDailyRoomParticipantCount(callFrame);
-          });
+            api.addEventListener('videoConferenceJoined', () => {
+              console.log('[Jitsi Meet] Conferencia unida exitosamente');
+              showToast('Conectado a la videollamada libre (#' + targetCase.id + ')', 'success');
+            });
 
-          // Manejo de pistas de audio y video remotas
-          callFrame.on('track-started', (event) => {
-            console.log('[Daily.co] Pista iniciada:', event.track?.kind, 'Local:', event.participant?.local, 'Participante:', event.participant?.user_name);
-            if (!event.participant?.local) {
-              handleRemoteDailyTrack(event);
-            }
-            updateDailyRoomParticipantCount(callFrame);
-          });
+            api.addEventListener('participantJoined', (p) => {
+              showToast((p.displayName || 'La contraparte') + ' se ha unido a la sala.', 'success');
+            });
 
-          callFrame.on('track-stopped', (event) => {
-            console.log('[Daily.co] Pista detenida:', event.track?.kind, 'Participante:', event.participant?.user_name);
-            if (!event.participant?.local) {
-              handleRemoteDailyTrackStopped(event);
-            }
-            updateDailyRoomParticipantCount(callFrame);
-          });
+            api.addEventListener('participantLeft', (p) => {
+              showToast((p.displayName || 'El participante') + ' ha abandonado la sala.', 'info');
+            });
 
-          callFrame.on('participant-joined', (event) => {
-            const pName = event.participant?.user_name || 'La contraparte';
-            console.log('[Daily.co] Participante entró a la sala:', pName);
-            showToast('👋 ' + pName + ' se ha unido a la videollamada.', 'success');
-            updateDailyRoomParticipantCount(callFrame);
-          });
-
-          callFrame.on('participant-updated', () => {
-            updateDailyRoomParticipantCount(callFrame);
-          });
-
-          callFrame.on('participant-left', (event) => {
-            const pName = event.participant?.user_name || 'El participante';
-            console.log('[Daily.co] Participante salió de la sala:', pName);
-            showToast('ℹ️ ' + pName + ' ha abandonado la sala.', 'info');
-            updateDailyRoomParticipantCount(callFrame);
-          });
-
-          callFrame.on('left-meeting', () => {
-            if (state.userExplicitlyLeftCall) {
+            api.addEventListener('readyToClose', () => {
               window.leaveDailyCall();
-            }
-          });
+            });
 
-          callFrame.on('error', (err) => {
-            console.error('[Daily.co ERROR] Error en el frame de videollamada:', err);
-            showToast('Error en la llamada de Daily.co: ' + (err?.errorMsg || JSON.stringify(err)), 'error');
-          });
-
-          console.log('[Daily.co] Uniéndose a la sala real con CallFrame.join:', roomUrl);
-          await callFrame.join({
-            url: roomUrl,
-            userName: userName
-          });
-
-        } catch (err) {
-          console.error('[Daily.co ERROR] Fallo al unirse a la sala real:', err);
-          showToast('Error al conectar con Daily.co: ' + err.message, 'error');
+            jitsiOk = true;
+          } catch (e) {
+            console.warn('[Jitsi API] Fallo constructor JitsiMeetExternalAPI, usando iframe directo:', e);
+          }
         }
-      } else {
-        console.error('[Daily.co ERROR] SDK DailyIframe no disponible en window.');
-        showToast('El SDK de Daily.co no se cargó correctamente.', 'error');
+
+        if (!jitsiOk) {
+          const directSrc = roomUrl + '#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=' + encodeURIComponent(userName);
+          mountEmbedIframe(mount, directSrc);
+          showToast('Conectado a la videollamada libre (#' + targetCase.id + ')', 'success');
+        }
       }
     }
   };
+
+  function mountEmbedIframe(mount, src) {
+    mount.innerHTML = `
+      <iframe 
+        id="vroomActiveIframe"
+        src="${src}" 
+        allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; clipboard-write *" 
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
+        style="width: 100%; height: 100%; min-height: 460px; border: none; border-radius: 8px; background: #0f172a;"
+      ></iframe>
+    `;
+  }
 
   // Función para abandonar la videollamada limpiamente
   window.leaveDailyCall = () => {
@@ -3423,6 +3463,14 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {}
       state.dailyCallFrame = null;
     }
+
+    if (state.jitsiApi) {
+      try {
+        state.jitsiApi.dispose();
+      } catch (e) {}
+      state.jitsiApi = null;
+    }
+
     const mount = document.getElementById('dailyIframeMount');
     if (mount) mount.innerHTML = '';
 
@@ -3449,6 +3497,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   vroomMicToggle?.addEventListener('click', () => {
     state.isAudioMuted = !state.isAudioMuted;
+    if (state.jitsiApi) {
+      try { state.jitsiApi.executeCommand('toggleAudio'); } catch (e) {}
+    }
     
     // Control en Daily.co CallFrame
     if (state.dailyCallFrame) {
@@ -3471,6 +3522,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   vroomCamToggle?.addEventListener('click', async () => {
     state.isVideoOff = !state.isVideoOff;
+    if (state.jitsiApi) {
+      try { state.jitsiApi.executeCommand('toggleVideo'); } catch (e) {}
+    }
     
     // Control en Daily.co CallFrame
     if (state.dailyCallFrame) {
@@ -3498,6 +3552,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   vroomShareToggle?.addEventListener('click', async () => {
+    if (state.jitsiApi) {
+      try {
+        state.jitsiApi.executeCommand('toggleShareScreen');
+        state.isScreenSharing = !state.isScreenSharing;
+        vroomShareToggle.classList.toggle('active-muted', state.isScreenSharing);
+        showToast(state.isScreenSharing ? 'Compartiendo pantalla.' : 'Pantalla compartida finalizada.', 'info');
+        return;
+      } catch (e) {}
+    }
     if (state.dailyCallFrame) {
       try {
         if (state.isScreenSharing) {

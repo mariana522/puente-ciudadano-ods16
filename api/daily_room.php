@@ -1,11 +1,11 @@
 <?php
 /**
  * ==============================================================================
- * SERVICIO BACKEND: GESTION DE SALAS DE VIDEOLLAMADA DAILY.CO (ODS 16)
+ * SERVICIO BACKEND: GESTIÓN DE SALAS DE VIDEOLLAMADA (ODS 16)
  * ==============================================================================
- * Aprovisiona y sincroniza salas dinamicas mediante la API REST de Daily.co,
- * asegurando que tanto Ciudadano como Profesional se unan exactamente a la
- * misma sesion virtual asignada a su expediente.
+ * Aprovisiona y sincroniza salas de videollamada universales (Jitsi Meet Libre o
+ * Daily Prebuilt), garantizando que Ciudadano y Profesional se unan exactamente a
+ * la misma sesión sin requerimiento de tarjetas de crédito ni planes de pago.
  * ==============================================================================
  */
 
@@ -29,7 +29,7 @@ function loadDailyEnv($path) {
         if (strpos($line, '=') !== false) {
             list($name, $value) = explode('=', $line, 2);
             $name = trim($name);
-            $value = trim($value, " \t\n\r\0\x0B\"\'");
+            $value = trim($value, " \t\n\r\0\x0B\"'");
             $vars[$name] = $value;
             if (!getenv($name)) {
                 putenv("$name=$value");
@@ -53,7 +53,9 @@ foreach ($envPaths as $p) {
 }
 
 $dailyApiKey     = getenv('DAILY_API_KEY') ?: ($_ENV['DAILY_API_KEY'] ?? '');
+$dailyRoomUrl    = getenv('DAILY_ROOM_URL') ?: ($_ENV['DAILY_ROOM_URL'] ?? '');
 $dailyDomain     = getenv('DAILY_DOMAIN') ?: ($_ENV['DAILY_DOMAIN'] ?? 'puente-ciudadano.daily.co');
+$jitsiDomain     = getenv('JITSI_DOMAIN') ?: ($_ENV['JITSI_DOMAIN'] ?? 'meet.jit.si');
 $expirationHours = (int)(getenv('DAILY_ROOM_EXPIRATION_HOURS') ?: 24);
 
 $rawInput = file_get_contents('php://input');
@@ -64,14 +66,11 @@ $citizen      = $data['citizen'] ?? $_GET['citizen'] ?? 'Mariana Sibaja';
 $professional = $data['professional'] ?? $_GET['professional'] ?? 'Dra. Elena Gomez';
 $durationMins = (int)($data['durationMinutes'] ?? $_GET['durationMinutes'] ?? ($expirationHours * 60));
 
-// Normalizar identificador para Daily.co (solo caracteres alfanumericos y guiones)
+// Normalizar identificador para sala (solo alfanuméricos)
 $cleanCaseId  = strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $caseId));
-$roomName     = 'puente-' . $cleanCaseId;
 $expTimestamp = time() + ($durationMins * 60);
 
-$hasValidKey = !empty($dailyApiKey) && $dailyApiKey !== 'tu_daily_api_key_aqui' && strlen($dailyApiKey) > 10;
-
-// Opcional: intentar guardar sala_url en base de datos MySQL
+// Guardar en base de datos si existe conexión
 function saveRoomToCase($cId, $url) {
     try {
         if (file_exists(__DIR__ . '/db_connect.php')) {
@@ -84,7 +83,27 @@ function saveRoomToCase($cId, $url) {
     } catch (Exception $e) {}
 }
 
+// 1. Si se configuró una URL fija de Daily Prebuilt
+if (!empty($dailyRoomUrl)) {
+    saveRoomToCase($caseId, $dailyRoomUrl);
+    echo json_encode([
+        'success'       => true,
+        'caseId'        => $caseId,
+        'roomName'      => 'puente-' . $cleanCaseId,
+        'roomUrl'       => $dailyRoomUrl,
+        'directJoinUrl' => $dailyRoomUrl,
+        'provider'      => 'daily',
+        'isFree'        => true,
+        'status'        => 'daily_prebuilt_ready',
+        'message'       => "Sala Daily Prebuilt configurada para el caso #{$caseId}"
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    exit();
+}
+
+// 2. Si hay clave válida de Daily, intentar API REST
+$hasValidKey = !empty($dailyApiKey) && $dailyApiKey !== 'tu_daily_api_key_aqui' && strlen($dailyApiKey) > 10;
 if ($hasValidKey) {
+    $roomName = 'puente-' . $cleanCaseId;
     $payload = [
         'name'       => $roomName,
         'privacy'    => 'public',
@@ -108,7 +127,7 @@ if ($hasValidKey) {
         'Authorization: Bearer ' . $dailyApiKey,
         'Content-Type: application/json'
     ]);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 6);
 
     $response = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -120,23 +139,21 @@ if ($hasValidKey) {
         saveRoomToCase($caseId, $roomUrl);
 
         echo json_encode([
-            'success'     => true,
-            'caseId'      => $caseId,
-            'roomName'    => $resData['name'] ?? $roomName,
-            'roomUrl'     => $roomUrl,
-            'privacy'     => $resData['privacy'] ?? 'public',
-            'exp'         => $resData['properties']['exp'] ?? $expTimestamp,
-            'provider'    => 'daily.co',
-            'status'      => 'created_live',
-            'isLive'      => true,
-            'message'     => "Sala Daily.co aprovisionada en vivo para el caso #{$caseId}"
+            'success'       => true,
+            'caseId'        => $caseId,
+            'roomName'      => $resData['name'] ?? $roomName,
+            'roomUrl'       => $roomUrl,
+            'directJoinUrl' => $roomUrl,
+            'provider'      => 'daily',
+            'status'        => 'created_live',
+            'message'       => "Sala Daily.co aprovisionada en vivo para el caso #{$caseId}"
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         exit();
     } elseif ($httpCode === 400 && strpos($response, 'already exists') !== false) {
         $chGet = curl_init("https://api.daily.co/v1/rooms/{$roomName}");
         curl_setopt($chGet, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($chGet, CURLOPT_HTTPHEADER, ['Authorization: Bearer ' . $dailyApiKey]);
-        curl_setopt($chGet, CURLOPT_TIMEOUT, 10);
+        curl_setopt($chGet, CURLOPT_TIMEOUT, 6);
         $resGet = curl_exec($chGet);
         curl_close($chGet);
         $existing = json_decode($resGet, true) ?: [];
@@ -144,34 +161,33 @@ if ($hasValidKey) {
         saveRoomToCase($caseId, $roomUrl);
 
         echo json_encode([
-            'success'     => true,
-            'caseId'      => $caseId,
-            'roomName'    => $existing['name'] ?? $roomName,
-            'roomUrl'     => $roomUrl,
-            'provider'    => 'daily.co',
-            'status'      => 'existing_live',
-            'isLive'      => true,
-            'message'     => "Sala existente reutilizada para el caso #{$caseId}"
+            'success'       => true,
+            'caseId'        => $caseId,
+            'roomName'      => $existing['name'] ?? $roomName,
+            'roomUrl'       => $roomUrl,
+            'directJoinUrl' => $roomUrl,
+            'provider'      => 'daily',
+            'status'        => 'existing_live',
+            'message'       => "Sala existente reutilizada para el caso #{$caseId}"
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
         exit();
     }
 }
 
-if (!$hasValidKey) {
-    http_response_code(500);
-    echo json_encode([
-        'success' => false,
-        'error'   => 'DAILY_API_KEY_MISSING',
-        'message' => 'La variable de entorno DAILY_API_KEY no está configurada o es el valor por defecto.',
-        'hint'    => 'Configura DAILY_API_KEY con tu clave de https://dashboard.daily.co/developers'
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    exit();
-}
+// 3. Fallback automático y libre a Jitsi Meet (Sin requerimiento de tarjeta ni costo)
+$jitsiRoomName = 'PuenteCiudadano_ODS16_' . $cleanCaseId;
+$roomUrl = "https://{$jitsiDomain}/{$jitsiRoomName}";
+saveRoomToCase($caseId, $roomUrl);
 
-http_response_code(502);
 echo json_encode([
-    'success' => false,
-    'error'   => 'DAILY_API_ERROR',
-    'message' => 'No se pudo crear o recuperar la sala en Daily.co: ' . ($response ?? 'Error desconocido')
+    'success'       => true,
+    'caseId'        => $caseId,
+    'roomName'      => $jitsiRoomName,
+    'roomUrl'       => $roomUrl,
+    'directJoinUrl' => $roomUrl,
+    'provider'      => 'jitsi',
+    'isFree'        => true,
+    'status'        => 'jitsi_ready',
+    'message'       => "Sala libre Jitsi Meet aprovisionada para el caso #{$caseId}"
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 exit();

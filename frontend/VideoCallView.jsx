@@ -43,7 +43,7 @@ export const VideoCallView = ({
 
       // Fallback seguro de sala Daily para caso específico
       const cleanId = String(caseId).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-      setRoomUrl(`https://puente-ciudadano.daily.co/puente-${cleanId}`);
+      setRoomUrl(`https://meet.jit.si/PuenteCiudadano_ODS16_${cleanId}`);
       setIsLoading(false);
     };
 

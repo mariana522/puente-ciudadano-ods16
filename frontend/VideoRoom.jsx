@@ -65,6 +65,24 @@ export const VideoRoom = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
+    if (!roomUrl.includes('daily.co')) {
+      const iframe = document.createElement('iframe');
+      iframe.src = `${roomUrl}#config.prejoinPageEnabled=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=${encodeURIComponent(user?.name || 'Participante')}`;
+      iframe.allow = 'camera *; microphone *; fullscreen *; display-capture *; autoplay *; clipboard-write *';
+      iframe.style.width = '100%';
+      iframe.style.height = '100%';
+      iframe.style.minHeight = '480px';
+      iframe.style.border = 'none';
+      iframe.style.borderRadius = '12px';
+      iframe.style.backgroundColor = '#0f172a';
+      containerRef.current.innerHTML = '';
+      containerRef.current.appendChild(iframe);
+      setCallState('in-call');
+      return () => {
+        if (containerRef.current) containerRef.current.innerHTML = '';
+      };
+    }
+
     let callFrame = null;
 
     try {
