@@ -346,10 +346,21 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderConditionalViews() {
     const user = state.currentUser;
 
+    // Control estricto de visibilidad del botón flotante de chat
+    const floatingBtn = document.getElementById('floatingMessengerBtn');
+    const messengerModalEl = document.getElementById('messengerModal');
+
     // ESTADO 1: SIN SESIÓN (Página Pública Inicial)
     if (!user) {
       if (publicHeader) publicHeader.style.display = 'block';
       if (authHeader) authHeader.style.display = 'none';
+
+      // OCULTAR COMPLETAMENTE la bolita de mensajes y cerrar el modal si no hay sesión
+      if (floatingBtn) floatingBtn.style.display = 'none';
+      if (messengerModalEl) {
+        messengerModalEl.classList.remove('active');
+        messengerModalEl.style.display = 'none';
+      }
 
       if (viewPublicSection) viewPublicSection.style.display = 'block';
       if (viewCitizenSection) viewCitizenSection.style.display = 'none';
@@ -360,6 +371,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ESTADO 2: VISTA DE CIUDADANO (Dinámica para cualquier ciudadano)
     else if (user.role === 'citizen') {
+      if (floatingBtn) floatingBtn.style.display = 'flex';
       if (publicHeader) publicHeader.style.display = 'none';
       if (authHeader) authHeader.style.display = 'block';
 
@@ -389,6 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ESTADO 3: VISTA DE PROFESIONAL (Dinámica para cualquier orientador/profesional)
     else if (user.role === 'professional' || user.role === 'admin') {
+      if (floatingBtn) floatingBtn.style.display = 'flex';
       if (publicHeader) publicHeader.style.display = 'none';
       if (authHeader) authHeader.style.display = 'block';
 
@@ -2193,11 +2206,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <button class="btn btn-secondary btn-sm" onclick="window.viewCaseDetail('${c.id}')" title="Ver detalle">
               <i class="fas fa-eye"></i> Detalle
             </button>
-            <a href="https://meet.jit.si/puente-ciudadano-caso-${c.id.toLowerCase().replace(/[^a-z0-9]/g, '')}" target="_blank" rel="noopener noreferrer" class="btn btn-turquoise btn-sm" style="text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Unirse a la Videollamada (Jitsi)">
-              <i class="fas fa-video"></i> Videollamada (Jitsi)
-            </a>
-            <button id="btnCitizenCall_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-secondary btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Sala y Chat en vivo">
-              <i class="fas fa-comments"></i> Chat Caso
+            <button id="btnCitizenCall_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-turquoise btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Asesoría en vivo">
+              <i class="fas fa-video"></i> Conectar
             </button>
             <button class="btn btn-primary btn-sm" onclick="window.openRoadmap('${c.id}')" title="Hoja de ruta">
               <i class="fas fa-file-contract"></i> Hoja de Ruta
@@ -2359,11 +2369,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 <i class="fas fa-eye"></i> Detalle
               </button>
             ` : `
-              <a href="https://meet.jit.si/puente-ciudadano-caso-${c.id.toLowerCase().replace(/[^a-z0-9]/g, '')}" target="_blank" rel="noopener noreferrer" class="btn btn-turquoise btn-sm" style="text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Unirse a la Videollamada (Jitsi)">
-                <i class="fas fa-video"></i> Videollamada (Jitsi)
-              </a>
-              <button id="btnAtenderCase_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-secondary btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Atender con chat en vivo">
-                <i class="fas fa-headset"></i> Atender & Chat
+              <button id="btnAtenderCase_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-turquoise btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Atender en vivo">
+                <i class="fas fa-headset"></i> Atender
               </button>
               <button class="btn btn-secondary btn-sm" onclick="window.openRoadmap('${c.id}')" title="Emitir hoja de ruta">
                 <i class="fas fa-file-signature"></i> Hoja de Ruta
@@ -2469,11 +2476,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <small>${targetCase.instAddress || ''}</small>
       </div>
       <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;">
-        <a href="https://meet.jit.si/puente-ciudadano-caso-${targetCase.id.toLowerCase().replace(/[^a-z0-9]/g, '')}" target="_blank" rel="noopener noreferrer" class="btn btn-turquoise" style="text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem;">
-          <i class="fas fa-video"></i> Unirse a la Videollamada (Jitsi)
-        </a>
-        <button class="btn btn-secondary" onclick="closeModal(); window.openVirtualRoom('${targetCase.id}')">
-          <i class="fas fa-comments"></i> Abrir Sala & Chat
+        <button class="btn btn-turquoise" onclick="closeModal(); window.openVirtualRoom('${targetCase.id}')">
+          <i class="fas fa-video"></i> Ir a Sala Virtual
         </button>
         <button class="btn btn-primary" onclick="closeModal(); window.openRoadmap('${targetCase.id}')">
           <i class="fas fa-file-contract"></i> Abrir Hoja de Ruta
@@ -2588,63 +2592,38 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================================================
   // 7. AUTENTICACIÓN REAL (INICIAR SESIÓN Y REGISTRO)
   // ==========================================================================
-  window.triggerLoginModal = () => {
+  window.triggerLoginModal = (defaultRole = 'citizen') => {
+    const roleLabel = defaultRole === 'professional' ? 'Profesional / Asesor' : 'Ciudadano';
+    const roleBadge = defaultRole === 'professional'
+      ? '<div style="background: var(--soft-blue); border-left: 4px solid var(--primary-blue); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-user-tie"></i> Acceso para Profesionales y Asesores Jurídicos</div>'
+      : '<div style="background: var(--soft-blue); border-left: 4px solid var(--accent-turquoise); padding: 0.65rem 0.9rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.88rem; color: var(--dark-blue); font-weight: 600;"><i class="fas fa-user"></i> Acceso para Ciudadanos y Solicitantes</div>';
+
     openModal('Iniciar Sesión - Puente Ciudadano', `
+      ${roleBadge}
       <form onsubmit="event.preventDefault(); window.handleLoginFormSubmit(this);">
         <div class="form-group" style="margin-bottom: 1.1rem;">
           <label class="form-label" style="font-weight: 600;"><i class="fas fa-envelope" style="color: var(--primary-blue); margin-right: 0.35rem;"></i> Correo Electrónico</label>
-          <input type="email" id="loginEmailInput" class="form-control" placeholder="tucorreo@ejemplo.com" required autocomplete="email">
+          <input type="email" id="loginEmailInput" class="form-control" placeholder="usuario@correo.com" required autocomplete="email">
         </div>
         <div class="form-group" style="margin-bottom: 1.25rem;">
           <label class="form-label" style="font-weight: 600;"><i class="fas fa-lock" style="color: var(--primary-blue); margin-right: 0.35rem;"></i> Contraseña</label>
           <input type="password" id="loginPasswordInput" class="form-control" placeholder="••••••••" required autocomplete="current-password">
         </div>
-        <button type="submit" class="btn btn-primary" id="btnSubmitLogin" style="width: 100%; padding: 0.75rem; font-size: 0.95rem;">
-          <i class="fas fa-arrow-right-to-bracket"></i> Iniciar Sesión
+        <button type="submit" class="btn btn-primary" id="btnSubmitLogin" style="width: 100%; padding: 0.75rem; font-size: 0.95rem; font-weight: 700;">
+          <i class="fas fa-arrow-right-to-bracket"></i> Iniciar Sesión como ${roleLabel}
         </button>
       </form>
 
-      <div style="margin-top: 1.25rem; padding: 0.85rem; background: var(--soft-blue); border-radius: 8px; border: 1px dashed var(--border-color);">
-        <small style="display: block; font-weight: 700; color: var(--dark-blue); margin-bottom: 0.5rem; text-transform: uppercase; font-size: 0.78rem;">
-          <i class="fas fa-users-gear"></i> Acceso rápido para probar cada usuario:
-        </small>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
-          <button type="button" class="btn btn-secondary btn-sm" onclick="window.quickLogin('elena.gomez@asesores.org')">
-            👩‍⚖️ Dra. Elena Gómez
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="window.quickLogin('mauricio.padilla@asesores.org')">
-            👨‍⚖️ Dr. M. Padilla
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="window.quickLogin('mariana.sibaja@ejemplo.com')">
-            👩 Mariana Sibaja
-          </button>
-          <button type="button" class="btn btn-secondary btn-sm" onclick="window.quickLogin('carlos.rodriguez@ejemplo.com')">
-            👨 Carlos Rodríguez
-          </button>
-        </div>
-      </div>
-
-      <div style="margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border-color); text-align: center; font-size: 0.88rem; color: var(--text-muted);">
-        ¿Aún no tienes una cuenta? 
-        <a href="javascript:void(0)" onclick="closeModal(); window.triggerRegisterModal();" style="color: var(--primary-blue); font-weight: 700; text-decoration: underline; margin-left: 0.25rem;">
+      <div style="margin-top: 1.25rem; padding-top: 0.85rem; border-top: 1px solid var(--border-color); text-align: center; font-size: 0.88rem; color: var(--text-muted);">
+        ¿Aún no tienes una cuenta registrada? 
+        <a href="javascript:void(0)" onclick="closeModal(); window.triggerRegisterModal('${defaultRole}');" style="color: var(--primary-blue); font-weight: 700; text-decoration: underline; margin-left: 0.25rem;">
           Regístrate gratis aquí
         </a>
       </div>
     `);
   };
 
-  window.quickLogin = (email) => {
-    const emailInput = document.getElementById('loginEmailInput');
-    const passInput = document.getElementById('loginPasswordInput');
-    if (emailInput && passInput) {
-      emailInput.value = email;
-      passInput.value = 'password123';
-      const form = emailInput.closest('form');
-      if (form) window.handleLoginFormSubmit(form);
-    }
-  };
-
-  window.handleLoginFormSubmit = async (form) => {
+    window.handleLoginFormSubmit = async (form) => {
     const email = document.getElementById('loginEmailInput')?.value.trim();
     const pass = document.getElementById('loginPasswordInput')?.value.trim();
     const submitBtn = document.getElementById('btnSubmitLogin');
@@ -2662,15 +2641,17 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       // 1. Intentar autenticar contra MySQL en XAMPP si está activo
       if (window.PuenteDB && window.PuenteDB.mysql) {
-        const mysqlRes = await window.PuenteDB.mysql.login(email, pass);
-        if (mysqlRes && mysqlRes.success && mysqlRes.user) {
-          state.currentUser = mysqlRes.user;
-          window.PuenteDB.session.set(mysqlRes.user);
-          closeModal();
-          renderConditionalViews();
-          showToast(`¡Bienvenido(a), ${mysqlRes.user.name}! Sesión iniciada con éxito.`, 'success');
-          return;
-        }
+        try {
+          const mysqlRes = await window.PuenteDB.mysql.login(email, pass);
+          if (mysqlRes && mysqlRes.success && mysqlRes.user) {
+            state.currentUser = mysqlRes.user;
+            window.PuenteDB.session.set(mysqlRes.user);
+            closeModal();
+            renderConditionalViews();
+            showToast(`¡Bienvenido(a), ${mysqlRes.user.name}! Sesión iniciada con éxito.`, 'success');
+            return;
+          }
+        } catch (e) {}
       }
 
       // 2. Si no responde MySQL o modo local, autenticar con la BD local
@@ -2697,8 +2678,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  window.triggerRegisterModal = () => {
-    openModal('Crear Cuenta en Puente Ciudadano', `
+  window.triggerRegisterModal = (preselectedRole = 'citizen') => {
+    openModal('Crear Cuenta - Puente Ciudadano', `
       <form onsubmit="event.preventDefault(); window.handleRegisterFormSubmit(this);">
         <div class="form-group" style="margin-bottom: 1rem;">
           <label class="form-label" style="font-weight: 600;"><i class="fas fa-user" style="color: var(--accent-turquoise); margin-right: 0.35rem;"></i> Nombre Completo</label>
@@ -3479,8 +3460,23 @@ document.addEventListener('DOMContentLoaded', () => {
       btnOpenExt.style.display = 'inline-flex';
     }
 
-    // 6. Sin iframe: El usuario se une con el botón directo en pestaña nueva
-    showToast('Sala de videollamada lista para el caso #' + targetCase.id + '. Haz clic en "Unirse a la Videollamada (Jitsi)".', 'info');
+    // 6. Montar componente Jitsi Meet incrustado exactamente como en la Imagen 1
+    const mount = document.getElementById('dailyIframeMount');
+    if (mount) {
+      const userName = state.currentUser?.name || (isProf ? 'Dra. Elena Gómez' : 'Mariana Sibaja');
+      console.log('[Jitsi Meet Incrustado] Conectando a sala:', cleanRoomUrl);
+
+      mount.innerHTML = `
+        <iframe 
+          id="jitsiMeetDirectFrame"
+          src="${cleanRoomUrl}#config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.enableLobby=false&config.startWithAudioMuted=false&config.startWithVideoMuted=false&userInfo.displayName=${encodeURIComponent(userName)}" 
+          allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; clipboard-write *" 
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
+          style="width: 100%; height: 100%; min-height: 480px; border: none; border-radius: 8px; background: #0b0f19;"
+        ></iframe>
+      `;
+      showToast('Conectado a la videollamada de orientación (#' + targetCase.id + ')', 'success');
+    }
   };
 
     function mountEmbedIframe(mount, src) {
@@ -3498,6 +3494,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Función para abandonar la videollamada limpiamente
   window.leaveDailyCall = () => {
     state.userExplicitlyLeftCall = true;
+
+    // Desmontar el iframe de la videollamada
+    const mount = document.getElementById('dailyIframeMount');
+    if (mount) mount.innerHTML = '';
 
     // Detener pistas de medios locales
     if (state.localMediaStream) {
@@ -3538,9 +3538,6 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {}
       state.jitsiApi = null;
     }
-
-    const mount = document.getElementById('dailyIframeMount');
-    if (mount) mount.innerHTML = '';
 
     if (virtualRoomModal) { virtualRoomModal.classList.remove('active'); virtualRoomModal.style.display = 'none'; }
 

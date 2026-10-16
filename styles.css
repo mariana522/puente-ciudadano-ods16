@@ -2717,7 +2717,7 @@ a:hover {
   color: #ffffff;
   border: none;
   box-shadow: 0 4px 18px rgba(0, 168, 150, 0.4);
-  display: flex;
+  display: none; /* Oculto por defecto hasta que el usuario inicie sesión */
   align-items: center;
   justify-content: center;
   font-size: 1.6rem;
