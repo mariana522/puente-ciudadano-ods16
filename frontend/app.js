@@ -2054,8 +2054,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <button class="btn btn-secondary btn-sm" onclick="window.viewCaseDetail('${c.id}')" title="Ver detalle">
               <i class="fas fa-eye"></i> Detalle
             </button>
-            <button id="btnCitizenCall_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-turquoise btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Asesoría en vivo">
-              <i class="fas fa-video"></i> Asesoría en Vivo
+            <a href="https://meet.jit.si/puente-ciudadano-caso-${c.id.toLowerCase().replace(/[^a-z0-9]/g, '')}" target="_blank" rel="noopener noreferrer" class="btn btn-turquoise btn-sm" style="text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Unirse a la Videollamada (Jitsi)">
+              <i class="fas fa-video"></i> Videollamada (Jitsi)
+            </a>
+            <button id="btnCitizenCall_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-secondary btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Sala y Chat en vivo">
+              <i class="fas fa-comments"></i> Chat Caso
             </button>
             <button class="btn btn-primary btn-sm" onclick="window.openRoadmap('${c.id}')" title="Hoja de ruta">
               <i class="fas fa-file-contract"></i> Hoja de Ruta
@@ -2217,8 +2220,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 <i class="fas fa-eye"></i> Detalle
               </button>
             ` : `
-              <button id="btnAtenderCase_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-turquoise btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Atender en vivo">
-                <i class="fas fa-headset"></i> Atender
+              <a href="https://meet.jit.si/puente-ciudadano-caso-${c.id.toLowerCase().replace(/[^a-z0-9]/g, '')}" target="_blank" rel="noopener noreferrer" class="btn btn-turquoise btn-sm" style="text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 4px;" title="Unirse a la Videollamada (Jitsi)">
+                <i class="fas fa-video"></i> Videollamada (Jitsi)
+              </a>
+              <button id="btnAtenderCase_${c.id.replace(/[^a-zA-Z0-9]/g, '')}" class="btn btn-secondary btn-sm" onclick="window.openVirtualRoom('${c.id}')" title="Atender con chat en vivo">
+                <i class="fas fa-headset"></i> Atender & Chat
               </button>
               <button class="btn btn-secondary btn-sm" onclick="window.openRoadmap('${c.id}')" title="Emitir hoja de ruta">
                 <i class="fas fa-file-signature"></i> Hoja de Ruta
@@ -2323,9 +2329,12 @@ document.addEventListener('DOMContentLoaded', () => {
         <span style="font-weight: 700; color: var(--primary-blue); font-size: 1.1rem;">${targetCase.institution}</span><br>
         <small>${targetCase.instAddress || ''}</small>
       </div>
-      <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: flex-end;">
-        <button class="btn btn-turquoise" onclick="closeModal(); window.openVirtualRoom('${targetCase.id}')">
-          <i class="fas fa-video"></i> Ir a Sala Virtual
+      <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem; justify-content: flex-end; flex-wrap: wrap;">
+        <a href="https://meet.jit.si/puente-ciudadano-caso-${targetCase.id.toLowerCase().replace(/[^a-z0-9]/g, '')}" target="_blank" rel="noopener noreferrer" class="btn btn-turquoise" style="text-decoration: none; font-weight: 700; display: inline-flex; align-items: center; gap: 0.5rem;">
+          <i class="fas fa-video"></i> Unirse a la Videollamada (Jitsi)
+        </a>
+        <button class="btn btn-secondary" onclick="closeModal(); window.openVirtualRoom('${targetCase.id}')">
+          <i class="fas fa-comments"></i> Abrir Sala & Chat
         </button>
         <button class="btn btn-primary" onclick="closeModal(); window.openRoadmap('${targetCase.id}')">
           <i class="fas fa-file-contract"></i> Abrir Hoja de Ruta
@@ -3223,31 +3232,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const isProf = state.currentUser?.role === 'professional';
     const cleanCaseId = String(targetCase.id).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // Generador determinista de token único por caso (garantiza el mismo token para ambos usuarios)
-    function getCaseRoomToken(cId) {
-      const clean = String(cId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      let h = 0x811c9dc5;
-      for (let i = 0; i < clean.length; i++) {
-        h ^= clean.charCodeAt(i);
-        h = (h * 0x01000193) >>> 0;
-      }
-      return h.toString(16).padStart(8, '0');
-    }
-
-    const roomToken = targetCase.roomToken || targetCase.vRoomToken || getCaseRoomToken(targetCase.id);
-    targetCase.roomToken = roomToken;
-
-    // Nombre de sala con token aleatorio único para evitar cualquier moderador o bloqueo:
-    const roomName = 'puente-ciudadano-caso-' + cleanCaseId + '-' + roomToken;
-    const jitsiDomain = (typeof window !== 'undefined' && window.PUENTE_CONFIG?.getJitsiDomain)
-      ? window.PUENTE_CONFIG.getJitsiDomain()
-      : (window.JITSI_DOMAIN || 'meet.jit.si');
-
-    // Hash de configuración para omitir vestíbulo (lobby), sala de espera y requisitos de moderador
-    const jitsiConfigHash = '#config.prejoinPageEnabled=false&config.prejoinConfig.enabled=false&config.enableLobby=false&config.enableLobbyChat=false&config.lobby.autoKnock=false&config.requireDisplayName=false&config.disableLobbyPassword=true&config.startWithAudioMuted=false&config.startWithVideoMuted=false&config.disableDeepLinking=true&interfaceConfig.LOBBY_SECTION_ENABLED=false&interfaceConfig.SHOW_JITSI_WATERMARK=false&interfaceConfig.SHOW_WATERMARK_FOR_GUESTS=false';
-    const roomUrl = 'https://' + jitsiDomain + '/' + roomName + jitsiConfigHash;
-    const cleanRoomUrl = 'https://' + jitsiDomain + '/' + roomName;
-    state.activeDailyRoomUrl = roomUrl;
+    // Enlace limpio y público de Jitsi Meet solicitado para pestaña nueva
+    const cleanRoomUrl = 'https://meet.jit.si/puente-ciudadano-caso-' + cleanCaseId;
+    state.activeDailyRoomUrl = cleanRoomUrl;
 
     // 1. Títulos y metadatos
     if (vRoomTitle) vRoomTitle.textContent = 'Sala de Orientación Virtual: #' + targetCase.id;
@@ -3305,21 +3292,43 @@ document.addEventListener('DOMContentLoaded', () => {
       window.PuenteDB.realtime.joinCase(targetCase.id, state.currentUser);
     }
 
-    // 5. Enlace visible y botones de 1 clic
+    // 5. Enlace visible y botón grande de 1 clic para abrir en pestaña nueva
+    const btnJoinDirect = document.getElementById('btnJoinJitsiRoomDirect');
+    if (btnJoinDirect) {
+      btnJoinDirect.href = cleanRoomUrl;
+      btnJoinDirect.onclick = () => {
+        showToast('Abriendo videollamada Jitsi Meet en nueva pestaña...', 'success');
+      };
+    }
+
+    const cleanDisplayEl = document.getElementById('cleanJitsiUrlDisplay');
+    if (cleanDisplayEl) {
+      cleanDisplayEl.textContent = cleanRoomUrl;
+    }
+
+    const btnCopyClean = document.getElementById('btnCopyJitsiCleanUrl');
+    if (btnCopyClean) {
+      btnCopyClean.onclick = () => {
+        navigator.clipboard.writeText(cleanRoomUrl).then(() => {
+          showToast('Enlace de Jitsi Meet copiado al portapapeles.', 'success');
+        });
+      };
+    }
+
     if (dailyRoomUrlText) {
       dailyRoomUrlText.textContent = cleanRoomUrl;
       dailyRoomUrlText.style.color = '#38bdf8';
-      dailyRoomUrlText.title = "Enlace Jitsi Meet con bypass de vestíbulo. Clic para copiar.";
+      dailyRoomUrlText.title = "Enlace público de Jitsi Meet. Clic para copiar.";
       dailyRoomUrlText.onclick = () => {
-        navigator.clipboard.writeText(roomUrl).then(() => {
-          showToast('Enlace libre de la videollamada copiado al portapapeles.', 'success');
+        navigator.clipboard.writeText(cleanRoomUrl).then(() => {
+          showToast('Enlace de la videollamada copiado al portapapeles.', 'success');
         });
       };
     }
 
     if (btnCopyDailyUrl) {
       btnCopyDailyUrl.onclick = () => {
-        navigator.clipboard.writeText(roomUrl).then(() => {
+        navigator.clipboard.writeText(cleanRoomUrl).then(() => {
           showToast('Enlace de la sala Jitsi copiado al portapapeles.', 'success');
         });
       };
@@ -3327,109 +3336,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const btnOpenExt = document.getElementById('btnOpenExternalRoom');
     if (btnOpenExt) {
-      btnOpenExt.href = roomUrl;
+      btnOpenExt.href = cleanRoomUrl;
       btnOpenExt.style.display = 'inline-flex';
     }
 
-    // 6. Montar componente Jitsi Meet
-    const mount = document.getElementById('dailyIframeMount');
-    if (mount) {
-      if (state.jitsiApi) {
-        try { state.jitsiApi.dispose(); } catch (e) {}
-        state.jitsiApi = null;
-      }
-      mount.innerHTML = '';
-
-      const userName = state.currentUser?.name || (isProf ? 'Dra. Elena Gómez' : 'Mariana Sibaja');
-      console.log('[Jitsi Meet] Conectando a sala:', roomUrl);
-
-      let jitsiReady = false;
-      if (typeof window.JitsiMeetExternalAPI === 'function') {
-        try {
-          const api = new window.JitsiMeetExternalAPI(jitsiDomain, {
-            roomName: roomName,
-            width: '100%',
-            height: '100%',
-            parentNode: mount,
-            userInfo: {
-              displayName: userName,
-              email: state.currentUser?.email || (isProf ? 'elena.gomez@asesores.org' : 'mariana.sibaja@ejemplo.com')
-            },
-            configOverwrite: {
-              // Deshabilitar completamente vestíbulo (lobby) y pantallas de espera
-              enableLobby: false,
-              enableLobbyChat: false,
-              lobby: {
-                autoKnock: false,
-                enableChat: false
-              },
-              prejoinPageEnabled: false,
-              prejoinConfig: {
-                enabled: false
-              },
-              requireDisplayName: false,
-              disableLobbyPassword: true,
-              enableWelcomePage: false,
-              disableDeepLinking: true,
-              startWithAudioMuted: false,
-              startWithVideoMuted: false,
-              p2p: {
-                enabled: true
-              }
-            },
-            interfaceConfigOverwrite: {
-              SHOW_JITSI_WATERMARK: false,
-              SHOW_WATERMARK_FOR_GUESTS: false,
-              LOBBY_SECTION_ENABLED: false,
-              TOOLBAR_BUTTONS: [
-                'microphone', 'camera', 'closedcaptions', 'desktop', 'fullscreen',
-                'fodeviceselection', 'hangup', 'chat', 'settings', 'raisehand',
-                'videoquality', 'tileview', 'videobackgroundblur'
-              ]
-            }
-          });
-
-          state.jitsiApi = api;
-
-          api.addEventListener('videoConferenceJoined', () => {
-            console.log('[Jitsi Meet] Conferencia unida exitosamente');
-            showToast('Conectado a la videollamada Jitsi Meet (#' + targetCase.id + ')', 'success');
-          });
-
-          api.addEventListener('participantJoined', (p) => {
-            showToast((p.displayName || 'La contraparte') + ' se ha unido a la sala.', 'success');
-          });
-
-          api.addEventListener('participantLeft', (p) => {
-            showToast((p.displayName || 'El participante') + ' ha salido de la sala.', 'info');
-          });
-
-          api.addEventListener('readyToClose', () => {
-            window.leaveDailyCall();
-          });
-
-          jitsiReady = true;
-        } catch (err) {
-          console.warn('[Jitsi API] Fallo al usar JitsiMeetExternalAPI, usando iframe directo:', err);
-        }
-      }
-
-      if (!jitsiReady) {
-        mount.innerHTML = `
-          <iframe 
-            id="jitsiMeetDirectFrame"
-            src="${roomUrl}&userInfo.displayName=${encodeURIComponent(userName)}" 
-            allow="camera *; microphone *; fullscreen *; display-capture *; autoplay *; clipboard-write *" 
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals allow-presentation"
-            style="width: 100%; height: 100%; min-height: 480px; border: none; border-radius: 8px; background: #0b0f19;"
-          ></iframe>
-        `;
-        showToast('Conectado a la videollamada Jitsi Meet (#' + targetCase.id + ')', 'success');
-      }
-    }
+    // 6. Sin iframe: El usuario se une con el botón directo en pestaña nueva
+    showToast('Sala de videollamada lista para el caso #' + targetCase.id + '. Haz clic en "Unirse a la Videollamada (Jitsi)".', 'info');
   };
 
-  function mountEmbedIframe(mount, src) {
+    function mountEmbedIframe(mount, src) {
     mount.innerHTML = `
       <iframe 
         id="vroomActiveIframe"

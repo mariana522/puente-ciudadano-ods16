@@ -1061,9 +1061,43 @@
             </div>
           </div>
 
-          <!-- Contenedor Principal de la Videollamada Daily.co -->
-          <div id="dailyCallContainer" class="daily-stream-container">
-            <div id="dailyIframeMount" style="width: 100%; height: 100%; min-height: 0;"></div>
+          <!-- Contenedor Principal de la Videollamada Directa Jitsi Meet -->
+          <div id="dailyCallContainer" class="daily-stream-container" style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2.5rem 1.5rem; text-align: center; background: radial-gradient(circle at center, #1e293b 0%, #0b0f19 100%); border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); min-height: 380px;">
+            <div style="width: 76px; height: 76px; border-radius: 50%; background: rgba(45, 212, 191, 0.12); display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; border: 2px solid var(--accent-turquoise); box-shadow: 0 0 20px rgba(45, 212, 191, 0.2);">
+              <i class="fas fa-video fa-2x" style="color: var(--accent-turquoise);"></i>
+            </div>
+            
+            <h3 style="color: #ffffff; margin: 0 0 0.5rem 0; font-size: 1.4rem; font-weight: 700;">
+              Videollamada de Orientación Segura
+            </h3>
+            <p style="color: rgba(255, 255, 255, 0.75); max-width: 500px; font-size: 0.92rem; margin: 0 0 1.5rem 0; line-height: 1.5;">
+              Para una comunicación fluida y sin bloqueos de moderador ni permisos de cámara, la videollamada se abre directamente en Jitsi Meet en una pestaña nueva con acceso libre.
+            </p>
+            
+            <!-- Botón Grande y Visible Solicitado -->
+            <a id="btnJoinJitsiRoomDirect" 
+               href="https://meet.jit.si/puente-ciudadano-caso-cas00138" 
+               target="_blank" 
+               rel="noopener noreferrer" 
+               class="btn btn-turquoise" 
+               style="padding: 1rem 2.25rem; font-size: 1.15rem; font-weight: 800; border-radius: 12px; box-shadow: 0 6px 20px rgba(45, 212, 191, 0.4); display: inline-flex; align-items: center; gap: 0.75rem; text-decoration: none; cursor: pointer; color: #0f172a; background: var(--accent-turquoise);"
+            >
+              <i class="fas fa-video fa-lg"></i> Unirse a la Videollamada (Jitsi)
+            </a>
+            
+            <div style="margin-top: 1.25rem; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; justify-content: center;">
+              <span style="font-size: 0.8rem; color: #94a3b8;">Enlace de la sala:</span>
+              <code id="cleanJitsiUrlDisplay" style="background: rgba(15, 23, 42, 0.9); padding: 4px 10px; border-radius: 6px; font-size: 0.82rem; color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.25);">https://meet.jit.si/puente-ciudadano-caso-cas00138</code>
+              <button type="button" id="btnCopyJitsiCleanUrl" class="btn btn-secondary btn-sm" style="padding: 3px 10px; font-size: 0.75rem;">
+                <i class="fas fa-copy"></i> Copiar
+              </button>
+            </div>
+            
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08); width: 100%; max-width: 460px; display: flex; justify-content: space-around; color: #94a3b8; font-size: 0.78rem;">
+              <span><i class="fas fa-shield-halved" style="color: var(--accent-turquoise);"></i> Sin cuentas</span>
+              <span><i class="fas fa-bolt" style="color: #fbbf24;"></i> Acceso 1-clic</span>
+              <span><i class="fas fa-comments" style="color: #38bdf8;"></i> Chat lateral activo</span>
+            </div>
           </div>
 
           <!-- Controles Limpios de la Videollamada -->

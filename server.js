@@ -594,10 +594,9 @@ function handleDailyRoomRequest(req, res, parsedUrl) {
       roomToken = generateCaseRoomToken(cleanCaseId);
     }
 
-    const roomName = 'puente-ciudadano-caso-' + cleanCaseId + '-' + roomToken;
-    const jitsiDomain = getJitsiDomain();
-    const cleanRoomUrl = 'https://' + jitsiDomain + '/' + roomName;
-    const directJoinUrl = cleanRoomUrl + JITSI_CONFIG_HASH;
+    const roomName = 'puente-ciudadano-caso-' + cleanCaseId;
+    const cleanRoomUrl = 'https://meet.jit.si/' + roomName;
+    const directJoinUrl = cleanRoomUrl;
 
     console.log('[Jitsi Meet] Sala libre con token único generada para caso #' + caseId + ': ' + cleanRoomUrl);
 
