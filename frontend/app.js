@@ -3558,14 +3558,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-    function sendVRoomMsg() {
+  async function sendVRoomMsg() {
     const text = vChatInput.value.trim();
     if (!text) return;
     const caseId = state.activeCaseIdForRoom || 'CAS-00138';
     const user = state.currentUser || { name: 'Usuario', role: 'citizen', email: 'usuario@ejemplo.com' };
 
     const newMsg = {
-      id: 'MSG-' + Date.now(),
+      id: 'MSG-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
       caseId: caseId,
       sender: user.name,
       senderEmail: user.email,
@@ -3575,16 +3575,28 @@ document.addEventListener('DOMContentLoaded', () => {
       date: new Date().toISOString().split('T')[0]
     };
 
-    // Guardar y transmitir en tiempo real
+    vChatInput.value = '';
+
+    // 1. Guardar de inmediato localmente para reactividad instantánea
     if (window.PuenteDB?.messages) {
       window.PuenteDB.messages.insert(caseId, newMsg, true);
     }
 
-    const userMsg = document.createElement('div');
-    userMsg.className = `chat-msg ${user.role || 'citizen'}`;
-    userMsg.innerHTML = `<strong>Tú:</strong><br>${text}`;
-    vChatBox.appendChild(userMsg);
-    vChatInput.value = '';
+    // 2. Persistir directamente en el servidor central por POST
+    try {
+      await fetch('/api/mensajes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMsg)
+      });
+    } catch (e) {
+      console.warn('[Sala Virtual] Error enviando mensaje a BD:', e);
+    }
+
+    const msgEl = document.createElement('div');
+    msgEl.className = 'chat-msg ' + (user.role || 'citizen');
+    msgEl.innerHTML = '<strong>Tú:</strong><br>' + text;
+    vChatBox.appendChild(msgEl);
     vChatBox.scrollTop = vChatBox.scrollHeight;
   }
 

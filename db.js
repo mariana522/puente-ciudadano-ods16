@@ -509,6 +509,14 @@ const PuenteDB = {
         }
       }
 
+      // Iniciar automáticamente motores de sincronización en tiempo real y polling
+      if (this.polling) {
+        this.polling.start();
+      }
+      if (this.realtime) {
+        this.realtime.init();
+      }
+
       // Sincronizar en segundo plano con MySQL si está disponible
       setTimeout(() => {
         this.syncWithMySQL();

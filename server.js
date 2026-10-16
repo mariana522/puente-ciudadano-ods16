@@ -649,10 +649,12 @@ function handleMessagesRequest(req, res, parsedUrl) {
         time: data.time || data.hora
       });
 
-      // Emitir en tiempo real a la sala del caso
+      // Emitir en tiempo real a la sala del caso Y globalmente
       const roomName = getRoomName(caseId);
       io.to(roomName).emit('receive_message', record);
       io.to(roomName).emit('new_message', record);
+      io.emit('receive_message', record);
+      io.emit('new_message', record);
 
       res.writeHead(201, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({
