@@ -43,6 +43,9 @@ Thumbs.db
 *.bak
 *.old
 *.zip
+*.db
+*.sqlite
+*.sqlite3
 ods16_orientacion/
 ods16_orientacion.zip
 
