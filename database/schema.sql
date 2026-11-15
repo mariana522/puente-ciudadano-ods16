@@ -237,3 +237,49 @@ JOIN `instituciones` inst ON c.institucion_id = inst.id
 LEFT JOIN `asignaciones_casos` ac ON (ac.caso_id = c.id AND ac.activo = 1)
 LEFT JOIN `usuarios` u_p ON ac.profesional_id = u_p.id
 LEFT JOIN `salas_videollamada` s ON s.caso_id = c.id;
+
+-- ------------------------------------------------------------------------------
+-- 13. TABLA: documentos_fuente (RAG - Normativa ODS 16)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `documentos_fuente` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `titulo` VARCHAR(255) NOT NULL,
+  `entidad` VARCHAR(150) NOT NULL,
+  `url` VARCHAR(500) DEFAULT NULL,
+  `fecha_consulta` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Documentos y leyes oficiales para RAG';
+
+-- ------------------------------------------------------------------------------
+-- 14. TABLA: fragmentos (RAG - Chunks y embeddings vectoriales JSON)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `fragmentos` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `documento_id` INT UNSIGNED NOT NULL,
+  `orden` INT NOT NULL,
+  `texto` TEXT NOT NULL,
+  `embedding` JSON NOT NULL,
+  CONSTRAINT `fk_fragmentos_documento` FOREIGN KEY (`documento_id`) REFERENCES `documentos_fuente` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Fragmentos de texto con vectores de embedding';
+
+-- ------------------------------------------------------------------------------
+-- 15. TABLA: consultas_agente (RAG - Trazabilidad, evaluación y alertas de riesgo)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `consultas_agente` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `usuario` VARCHAR(150) DEFAULT 'Ciudadano Anónimo',
+  `consulta` TEXT NOT NULL,
+  `respuesta` TEXT DEFAULT NULL,
+  `tipo_caso` VARCHAR(150) DEFAULT NULL,
+  `institucion` VARCHAR(150) DEFAULT NULL,
+  `pasos` JSON DEFAULT NULL,
+  `citas` JSON DEFAULT NULL,
+  `fragmentos_usados` JSON DEFAULT NULL,
+  `riesgo` TINYINT(1) DEFAULT 0,
+  `requiere_peticion` TINYINT(1) DEFAULT 0,
+  `confianza` FLOAT DEFAULT 0.0,
+  `sim_max` FLOAT DEFAULT 0.0,
+  `derivar` TINYINT(1) DEFAULT 0,
+  `alerta_profesional` TINYINT(1) DEFAULT 0,
+  `fecha_consulta` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Consultas orientadas por el agente RAG';
+

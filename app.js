@@ -490,10 +490,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (action === 'cases') {
       document.getElementById('cNavCases')?.classList.add('active');
+      if (typeof window.ocultarPanelAgente === 'function') window.ocultarPanelAgente();
       renderCitizenTable();
       showToast('Mostrando tus casos registrados.', 'info');
     } else if (action === 'report') {
       document.getElementById('cNavReport')?.classList.add('active');
+      if (typeof window.ocultarPanelAgente === 'function') window.ocultarPanelAgente();
       openModal('Reportar Nueva Situación (ODS 16)', `
         <p style="color: var(--text-muted); font-size: 0.95rem;">Diligencia este formulario para orientar tu situación con la entidad correspondiente.</p>
         <div class="form-group" style="margin-top: 1rem;">
@@ -520,11 +522,21 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (action === 'notifications') {
       document.getElementById('cNavNotif')?.classList.add('active');
       window.openNotificationsModal();
+    } else if (action === 'agente') {
+      document.getElementById('cNavAgent')?.classList.add('active');
+      // Mostrar panel del Agente RAG y ocultar tabla de casos
+      if (typeof window.mostrarPanelAgente === 'function') {
+        window.mostrarPanelAgente();
+      }
+      showToast('Agente de Orientación Ciudadana activado. Describe tu situación.', 'info');
     } else if (action === 'institutions') {
       document.getElementById('cNavInst')?.classList.add('active');
+      // Si el panel del agente estaba visible, ocultarlo
+      if (typeof window.ocultarPanelAgente === 'function') window.ocultarPanelAgente();
       window.openInstitutionsModal();
     } else if (action === 'profile') {
       document.getElementById('cNavProfile')?.classList.add('active');
+      if (typeof window.ocultarPanelAgente === 'function') window.ocultarPanelAgente();
       window.openProfileModal();
     }
   };

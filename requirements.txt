@@ -1,10 +1,27 @@
 # ==============================================================================
-# PUENTE CIUDADANO (ODS 16) - DEPENDENCIAS PARA AGENTE RAG
+# PUENTE CIUDADANO (ODS 16) - DEPENDENCIAS COMPLETAS DEL AGENTE RAG
+# Instalar con: pip install -r requirements.txt
 # ==============================================================================
+
+# Framework web y base de datos
 flask>=3.0.0
 flask-sqlalchemy>=3.1.0
-pypdf>=5.0.0
-google-genai>=1.0.0
-numpy>=1.26.0
-python-dotenv>=1.0.0
+
+# Base de datos
 pymysql>=1.1.0
+sqlalchemy>=2.0.0
+
+# API de Gemini (embeddings + generación JSON RAG)
+google-genai>=1.0.0
+
+# Lectura de PDFs normativos oficiales
+pypdf>=5.0.0
+
+# Álgebra lineal vectorial (similitud coseno con self.matriz @ q)
+numpy>=1.26.0
+
+# Variables de entorno
+python-dotenv>=1.0.0
+
+# Generación de PDFs (Derecho de Petición - Art. 16 Ley 1437/2011)
+reportlab>=4.0.0

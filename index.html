@@ -715,6 +715,11 @@
               </a>
             </li>
             <li>
+              <a href="#" class="sidebar-item" id="cNavAgent" onclick="window.sidebarCitizenAction('agente')">
+                <i class="fas fa-wand-magic-sparkles"></i> Agente de Orientación
+              </a>
+            </li>
+            <li>
               <a href="#" class="sidebar-item" id="cNavInst" onclick="window.sidebarCitizenAction('institutions')">
                 <i class="fas fa-building-columns"></i> Instituciones
               </a>
@@ -754,6 +759,9 @@
           <button class="btn btn-turquoise" onclick="window.sidebarCitizenAction('report')">
             <i class="fas fa-plus"></i> Nueva Situación
           </button>
+          <button class="btn btn-primary" onclick="window.sidebarCitizenAction('agente')" style="margin-left: 0.5rem;">
+            <i class="fas fa-wand-magic-sparkles"></i> Consultar Agente IA
+          </button>
         </div>
 
         <!-- Card: Mis casos -->
@@ -792,6 +800,180 @@
             </button>
           </div>
         </div>
+
+        <!-- ================================================================
+             PANEL DEL AGENTE DE ORIENTACIÓN CIUDADANA CON RAG (ODS 16)
+             Se muestra al presionar "Agente de Orientación" en el sidebar.
+        ================================================================ -->
+        <div id="agenteRAGPanel" style="display: none;">
+          <div class="rag-agent-container">
+
+            <!-- Header del Agente -->
+            <div class="rag-hero-header">
+              <div>
+                <h3><i class="fas fa-wand-magic-sparkles"></i> Agente de Orientación Ciudadana</h3>
+                <p style="margin:0; font-size:0.92rem; opacity:0.88;">
+                  Basado en <strong>normativa oficial colombiana</strong> (ODS 16). Respondo con citas verificables y te indico los pasos exactos para tu situación.
+                </p>
+              </div>
+              <div style="text-align:center; flex-shrink:0;">
+                <div style="font-size:2.2rem;">⚖️</div>
+                <div style="font-size:0.72rem; margin-top:4px; opacity:0.75; font-weight:600;">RAG · Gemini</div>
+              </div>
+            </div>
+
+            <!-- Consultas Rápidas (Chips Sugeridos) -->
+            <div>
+              <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0.5rem; font-weight:600;">CONSULTAS FRECUENTES:</p>
+              <div class="rag-prompt-chips" id="ragChipsContainer">
+                <button class="rag-chip chip-emergency" onclick="window.ragUsarChip(this)">
+                  <i class="fas fa-triangle-exclamation"></i> Amenaza o violencia en mi hogar
+                </button>
+                <button class="rag-chip" onclick="window.ragUsarChip(this)">
+                  <i class="fas fa-briefcase"></i> Me despidieron sin pagar liquidación
+                </button>
+                <button class="rag-chip" onclick="window.ragUsarChip(this)">
+                  <i class="fas fa-file-contract"></i> Entidad no responde mi petición
+                </button>
+                <button class="rag-chip" onclick="window.ragUsarChip(this)">
+                  <i class="fas fa-child-reaching"></i> Custodia y cuota de alimentos
+                </button>
+                <button class="rag-chip" onclick="window.ragUsarChip(this)">
+                  <i class="fas fa-heart-pulse"></i> EPS niega tratamiento médico
+                </button>
+                <button class="rag-chip" onclick="window.ragUsarChip(this)">
+                  <i class="fas fa-gavel"></i> ¿Cómo interponer una acción de tutela?
+                </button>
+              </div>
+            </div>
+
+            <!-- Caja de Entrada del Ciudadano -->
+            <div class="rag-input-box">
+              <label style="font-size:0.82rem; font-weight:700; color:var(--text-muted); display:block; margin-bottom:0.6rem;">
+                <i class="fas fa-comment-dots"></i> Describe tu situación con detalle:
+              </label>
+              <textarea
+                id="ragMensajeInput"
+                class="rag-textarea"
+                placeholder="Ej: Mi empleador me despidió hace 3 semanas sin pagarme la liquidación, las cesantías ni las vacaciones. ¿Qué puedo hacer y a qué entidad acudir?"
+              ></textarea>
+              <div class="rag-actions-bar">
+                <span style="font-size:0.78rem; color:var(--text-muted);">
+                  <i class="fas fa-shield-halved" style="color:var(--accent-turquoise);"></i>
+                  Tu consulta es confidencial y se usa para generarte una orientación personalizada.
+                </span>
+                <button class="btn btn-primary" id="ragEnviarBtn" onclick="window.ragEnviarConsulta()" style="display:flex; align-items:center; gap:0.5rem;">
+                  <i class="fas fa-paper-plane"></i> Consultar
+                </button>
+              </div>
+            </div>
+
+            <!-- Estado de Carga del Agente -->
+            <div id="ragLoadingState" style="display:none; text-align:center; padding:2rem;">
+              <div style="font-size:2rem; animation: spin 1.2s linear infinite; display:inline-block;">⚙️</div>
+              <p style="color:var(--text-muted); margin-top:0.75rem; font-size:0.92rem;">
+                El agente está analizando normativa oficial y generando tu orientación personalizada...
+              </p>
+            </div>
+
+            <!-- RESULTADO: Tarjeta Roja de Emergencia (solo visible cuando riesgo = true) -->
+            <div id="ragEmergenciaCard" style="display:none;" class="card-emergencia-roja">
+              <div class="emergencia-header">
+                <i class="fas fa-circle-exclamation" style="font-size:1.6rem;"></i>
+                ⚠️ SITUACIÓN DE RIESGO DETECTADA — ATENCIÓN PRIORITARIA
+              </div>
+              <p class="emergencia-desc">
+                Tu mensaje indica una posible situación de <strong>peligro físico, violencia o amenaza</strong>.
+                Hemos notificado a un profesional orientador. Por favor, si estás en peligro inmediato,
+                comunícate <strong>ahora mismo</strong> con alguna de estas líneas oficiales gratuitas:
+              </p>
+              <div class="lineas-emergencia-grid" id="ragLineasGrid"></div>
+            </div>
+
+            <!-- RESULTADO: Respuesta del Agente RAG -->
+            <div id="ragResultadoCard" style="display:none;" class="rag-response-card">
+
+              <!-- Header con métricas de confianza -->
+              <div class="rag-header-metas">
+                <div>
+                  <span style="font-size:0.8rem; color:var(--text-muted); font-weight:600; text-transform:uppercase;">TIPO DE CASO</span>
+                  <div style="font-weight:800; color:var(--dark-blue); font-size:1.05rem;" id="ragTipoCaso">—</div>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap;">
+                  <span id="ragConfianzaBadge" class="confianza-badge">—</span>
+                  <span id="ragDerivarBadge" style="display:none;" class="confianza-badge confianza-media">
+                    <i class="fas fa-user-tie"></i> Derivación activada
+                  </span>
+                </div>
+              </div>
+
+              <!-- Institución Competente -->
+              <div class="rag-institucion-box" id="ragInstitucionBox">
+                <div style="font-size:0.78rem; color:var(--text-muted); font-weight:700; text-transform:uppercase; margin-bottom:4px;">ENTIDAD COMPETENTE</div>
+                <strong id="ragInstitucionNombre">—</strong>
+                <div style="font-size:0.82rem; color:#334155; margin-top:3px;" id="ragInstitucionDesc"></div>
+              </div>
+
+              <!-- Respuesta textual del agente -->
+              <div style="margin-bottom:1.25rem;">
+                <p style="font-size:0.82rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.5rem;">
+                  <i class="fas fa-comment-dots"></i> ORIENTACIÓN DEL AGENTE
+                </p>
+                <div id="ragRespuestaTexto" style="font-size:0.95rem; color:#1e293b; line-height:1.6;"></div>
+              </div>
+
+              <!-- Pasos Sugeridos -->
+              <div class="rag-pasos-list" id="ragPasosContainer" style="display:none;">
+                <p style="font-size:0.82rem; font-weight:700; color:var(--primary-blue); margin:0 0 0.75rem; text-transform:uppercase;">
+                  <i class="fas fa-list-ol"></i> PASOS A SEGUIR
+                </p>
+                <ol id="ragPasosList"></ol>
+              </div>
+
+              <!-- Fuentes Normativas Interactivas (con enlaces) -->
+              <div class="fuentes-container" id="ragFuentesContainer" style="display:none;">
+                <p style="font-size:0.82rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; margin-bottom:0.6rem;">
+                  <i class="fas fa-book-open-reader"></i> FUENTES NORMATIVAS UTILIZADAS
+                </p>
+                <div class="fuentes-grid" id="ragFuentesGrid"></div>
+              </div>
+
+              <!-- Alerta de Derivación -->
+              <div class="derivar-alert-box" id="ragDerivarBox" style="display:none;">
+                <div>
+                  <strong style="color:#92400e;"><i class="fas fa-user-tie"></i> Orientador Profesional Recomendado</strong>
+                  <p style="margin:0.3rem 0 0; font-size:0.88rem; color:#78350f;">
+                    La complejidad o el nivel de confianza de esta consulta requiere que un profesional del equipo ODS 16 te acompañe directamente.
+                  </p>
+                </div>
+                <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+                  <button class="btn btn-secondary" style="font-size:0.85rem;" onclick="window.openMessagesModal()">
+                    <i class="fas fa-comments"></i> Ir al Chat
+                  </button>
+                  <button class="btn btn-primary" style="font-size:0.85rem;" onclick="window.openScheduleCallModal()">
+                    <i class="fas fa-video"></i> Videollamada
+                  </button>
+                </div>
+              </div>
+
+              <!-- Generar Derecho de Petición (si aplica) -->
+              <div class="peticion-card-box" id="ragPeticionBox" style="display:none;">
+                <div>
+                  <strong style="color:#166534;"><i class="fas fa-file-pdf"></i> Borrador de Derecho de Petición disponible</strong>
+                  <p style="margin:0.3rem 0 0; font-size:0.88rem; color:#14532d;">
+                    Tu caso amerita un Derecho de Petición formal (Art. 16, Ley 1437 de 2011). Hemos preparado el borrador con tus datos y la fundamentación jurídica.
+                  </p>
+                </div>
+                <button class="btn btn-primary" style="background:#16a34a; border-color:#16a34a; font-size:0.88rem;" id="ragDescargarPeticionBtn">
+                  <i class="fas fa-download"></i> Descargar PDF
+                </button>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+        <!-- FIN AGENTE RAG PANEL -->
 
       </section>
 
@@ -1201,5 +1383,8 @@
 
   <!-- Main Application Script -->
   <script src="app.js?v=10.1"></script>
+
+  <!-- Agente RAG de Orientación Ciudadana (ODS 16 - Gemini + NumPy + Flask) -->
+  <script src="agente_rag.js?v=1.0"></script>
 </body>
 </html>

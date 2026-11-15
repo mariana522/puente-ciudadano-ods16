@@ -93,3 +93,49 @@ VALUES
 ('CAS-00138', 'Dra. Elena Gómez', 'professional', 'Hola Mariana, bienvenida. Ya revisé tus documentos iniciales.', '10:00 AM'),
 ('CAS-00138', 'Mariana Sibaja', 'citizen', 'Gracias doctora, no me quisieron entregar la carta de despido.', '10:02 AM'),
 ('CAS-00138', 'Dra. Elena Gómez', 'professional', 'No te preocupes. Con la constancia de consignación y testigos podemos radicar la citación en Inspección del Trabajo.', '10:04 AM');
+
+-- ------------------------------------------------------------------------------
+-- 4. TABLA: documentos_fuente (RAG - Normativa ODS 16)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `puente_ciudadano`.`documentos_fuente` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `titulo` VARCHAR(255) NOT NULL,
+  `entidad` VARCHAR(150) NOT NULL,
+  `url` VARCHAR(500) DEFAULT NULL,
+  `fecha_consulta` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 5. TABLA: fragmentos (RAG - Bloques de texto con embeddings vectoriales JSON)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `puente_ciudadano`.`fragmentos` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `documento_id` INT NOT NULL,
+  `orden` INT NOT NULL,
+  `texto` TEXT NOT NULL,
+  `embedding` JSON NOT NULL,
+  CONSTRAINT `fk_fragmentos_doc` FOREIGN KEY (`documento_id`) REFERENCES `puente_ciudadano`.`documentos_fuente` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------------------------
+-- 6. TABLA: consultas_agente (RAG - Auditoría, trazabilidad, riesgo y derivación)
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `puente_ciudadano`.`consultas_agente` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `usuario` VARCHAR(150) DEFAULT 'Ciudadano Anónimo',
+  `consulta` TEXT NOT NULL,
+  `respuesta` TEXT DEFAULT NULL,
+  `tipo_caso` VARCHAR(150) DEFAULT NULL,
+  `institucion` VARCHAR(150) DEFAULT NULL,
+  `pasos` JSON DEFAULT NULL,
+  `citas` JSON DEFAULT NULL,
+  `fragmentos_usados` JSON DEFAULT NULL,
+  `riesgo` TINYINT(1) DEFAULT 0,
+  `requiere_peticion` TINYINT(1) DEFAULT 0,
+  `confianza` FLOAT DEFAULT 0.0,
+  `sim_max` FLOAT DEFAULT 0.0,
+  `derivar` TINYINT(1) DEFAULT 0,
+  `alerta_profesional` TINYINT(1) DEFAULT 0,
+  `fecha_consulta` DATETIME DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
