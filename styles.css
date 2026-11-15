@@ -2726,7 +2726,45 @@ a:hover {
   align-items: center;
   gap: 0.65rem;
   background: #ffffff;
+  flex-wrap: wrap;
+  position: relative;
 }
+
+/* Barra de previsualización de archivo adjunto */
+.messenger-file-preview-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.82rem;
+  color: #166534;
+  margin-bottom: 0.4rem;
+  flex: 0 0 100%;
+  order: -1;
+}
+
+.preview-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-cancel-btn {
+  background: none;
+  border: none;
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 0.2rem;
+  line-height: 1;
+}
+
+.preview-cancel-btn:hover { color: #b91c1c; }
 
 .messenger-attach-btn {
   background: #f1f5f9;
@@ -2771,6 +2809,58 @@ a:hover {
   align-items: center !important;
   justify-content: center !important;
 }
+
+/* ================================================
+   ADJUNTOS EN EL CHAT — Chip de archivo adjunto
+   ================================================ */
+.chat-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.75rem;
+  margin-top: 0.35rem;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  max-width: 100%;
+  overflow: hidden;
+  transition: background 0.18s, transform 0.12s;
+}
+
+.m-bubble-in .chat-attachment-chip {
+  background: rgba(0,168,150,0.08);
+  border-color: rgba(0,168,150,0.25);
+  color: var(--dark-blue, #1e293b);
+}
+
+.chat-attachment-chip:hover {
+  background: rgba(0,168,150,0.15);
+  transform: translateY(-1px);
+}
+
+.chat-attachment-chip .chip-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.chat-attachment-chip .chip-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-attachment-chip .chip-download {
+  opacity: 0.65;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+
+.chat-attachment-chip:hover .chip-download { opacity: 1; }
 
 /* Floating Messenger Trigger Bubble */
 .floating-messenger-bubble {

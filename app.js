@@ -1993,12 +1993,51 @@ document.addEventListener('DOMContentLoaded', () => {
                      (msg.sender && msg.sender.toLowerCase().trim() === myName) ||
                      (msg.role === user.role);
 
+      // Renderizar adjunto si existe
+      let adjuntoHTML = '';
+      if (msg.attachment && (msg.attachment.dataUrl || msg.attachment.url)) {
+        const ext = (msg.attachment.originalname || '').split('.').pop().toLowerCase();
+        const iconClass = ['pdf'].includes(ext) ? 'fa-file-pdf' :
+                          ['png','jpg','jpeg','gif','webp'].includes(ext) ? 'fa-file-image' :
+                          ['doc','docx'].includes(ext) ? 'fa-file-word' :
+                          ['xls','xlsx'].includes(ext) ? 'fa-file-excel' :
+                          ['zip'].includes(ext) ? 'fa-file-archive' :
+                          'fa-file-alt';
+
+        // Prioridad: base64 inline (Render-safe) > URL de servidor
+        const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
+        const fileHref = msg.attachment.dataUrl || (() => {
+          const rawUrl = msg.attachment.url || '';
+          if (rawUrl.startsWith('http')) return rawUrl;
+          const base = window.PUENTE_CONFIG ? window.PUENTE_CONFIG.getServerUrl() : 'http://localhost:3001';
+          return base.replace(/\/$/, '') + rawUrl;
+        })();
+
+        if (isImage && msg.attachment.dataUrl) {
+          // Vista previa inline para imágenes
+          adjuntoHTML = `
+            <a href="${fileHref}" target="_blank" rel="noopener" class="chat-attachment-chip chat-attachment-image" title="${msg.attachment.originalname}">
+              <img src="${fileHref}" alt="${msg.attachment.originalname}" style="max-width:160px;max-height:120px;border-radius:6px;display:block;margin:0.3rem 0;">
+              <span class="chip-name">${msg.attachment.originalname}</span>
+              <span class="chip-download"><i class="fas fa-download"></i></span>
+            </a>`;
+        } else {
+          adjuntoHTML = `
+            <a href="${fileHref}" target="_blank" rel="noopener" class="chat-attachment-chip" title="Abrir ${msg.attachment.originalname}" download="${msg.attachment.originalname}">
+              <i class="fas ${iconClass} chip-icon"></i>
+              <span class="chip-name">${msg.attachment.originalname}</span>
+              <span class="chip-download"><i class="fas fa-download"></i></span>
+            </a>`;
+        }
+      }
+
       return `
         <div class="m-bubble ${isMine ? 'm-bubble-out' : 'm-bubble-in'}">
           <div style="font-size: 0.72rem; font-weight: 700; margin-bottom: 0.2rem; opacity: 0.85;">
             ${isMine ? 'Tú' : msg.sender}
           </div>
-          <div>${msg.text}</div>
+          ${msg.text ? `<div>${msg.text}</div>` : ''}
+          ${adjuntoHTML}
           <span class="m-bubble-time">${msg.time || ''}</span>
         </div>
       `;
@@ -2008,16 +2047,53 @@ document.addEventListener('DOMContentLoaded', () => {
     threadEl.scrollTop = threadEl.scrollHeight;
   };
 
+  // Helper: leer archivo como base64 (funciona en localhost y Render sin disco)
+  function leerArchivoBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result); // data:mime;base64,XXX
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+      reader.readAsDataURL(file);
+    });
+  }
+
     // Enviar mensaje en el Messenger (Bidireccional en Tiempo Real)
   window.sendMessengerMessage = async () => {
     const input = document.getElementById('messengerTextInput');
     if (!input) return;
 
     const text = input.value.trim();
-    if (!text) return;
+    const fileInput = document.getElementById('messengerFileInput');
+    const selectedFile = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+
+    // Requiere texto O archivo
+    if (!text && !selectedFile) return;
 
     const user = state.currentUser || { name: 'Mariana Sibaja', role: 'citizen', email: 'mariana.sibaja@ejemplo.com' };
     const caseId = state.activeMessengerCaseId || 'CAS-00138';
+
+    // --- Estrategia de adjunto: base64 inline (compatible con Render/disco efímero) ---
+    let attachment = null;
+    if (selectedFile) {
+      // Validar tamaño: máx 8 MB para base64 seguro
+      if (selectedFile.size > 8 * 1024 * 1024) {
+        showToast('El archivo supera el límite de 8 MB. Por favor comprime el documento.', 'error');
+        return;
+      }
+      try {
+        const dataUrl = await leerArchivoBase64(selectedFile);
+        attachment = {
+          originalname: selectedFile.name,
+          mimetype: selectedFile.type || 'application/octet-stream',
+          size: selectedFile.size,
+          dataUrl: dataUrl   // base64 completo — no depende del disco del servidor
+        };
+      } catch (err) {
+        console.error('[Messenger] Error leyendo archivo:', err);
+        showToast('No se pudo procesar el archivo. Intenta de nuevo.', 'error');
+        return;
+      }
+    }
 
     const newMsg = {
       id: 'MSG-' + Date.now(),
@@ -2025,19 +2101,25 @@ document.addEventListener('DOMContentLoaded', () => {
       sender: user.name,
       senderEmail: user.email,
       role: user.role,
-      text: text,
+      text: text || '',
       time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      date: new Date().toISOString().split('T')[0]
+      date: new Date().toISOString().split('T')[0],
+      attachment: attachment
     };
 
+    // Limpiar inputs
     input.value = '';
+    if (fileInput) fileInput.value = '';
+    // Ocultar preview bar
+    const previewBar = document.getElementById('messengerFilePreviewBar');
+    if (previewBar) previewBar.style.display = 'none';
 
     // 1. Guardar de inmediato localmente
     if (window.PuenteDB?.messages) {
       window.PuenteDB.messages.insert(caseId, newMsg, true);
     }
 
-    // 2. Guardar DIRECTAMENTE en el backend de Render con URL dinámica
+    // 2. Guardar en backend
     try {
       const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
         ? window.PUENTE_CONFIG.getApiUrl('api/mensajes')
@@ -2057,7 +2139,33 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   window.attachFileInMessenger = () => {
-    showToast('Función de adjuntos ODS 16 activa: Puedes cargar documentos PDF, fotos de contratos o peticiones.', 'info');
+    const fileInput = document.getElementById('messengerFileInput');
+    if (fileInput) fileInput.click();
+  };
+
+  window.onMessengerFileSelected = () => {
+    const fileInput = document.getElementById('messengerFileInput');
+    const previewBar = document.getElementById('messengerFilePreviewBar');
+    const previewName = document.getElementById('messengerFilePreviewName');
+    if (!fileInput || !fileInput.files || !fileInput.files[0]) return;
+
+    const file = fileInput.files[0];
+    const ext = file.name.split('.').pop().toLowerCase();
+    const iconClass = ['pdf'].includes(ext) ? 'fa-file-pdf' :
+                      ['png','jpg','jpeg','gif','webp'].includes(ext) ? 'fa-file-image' :
+                      ['doc','docx'].includes(ext) ? 'fa-file-word' :
+                      ['xls','xlsx'].includes(ext) ? 'fa-file-excel' :
+                      'fa-file-alt';
+
+    if (previewName) previewName.innerHTML = `<i class="fas ${iconClass}"></i> ${file.name} <span style="color:#94a3b8;font-size:0.75rem;">(${(file.size/1024).toFixed(1)} KB)</span>`;
+    if (previewBar) previewBar.style.display = 'flex';
+  };
+
+  window.cancelMessengerFile = () => {
+    const fileInput = document.getElementById('messengerFileInput');
+    if (fileInput) fileInput.value = '';
+    const previewBar = document.getElementById('messengerFilePreviewBar');
+    if (previewBar) previewBar.style.display = 'none';
   };
 
   // Iniciar videollamada directamente desde la conversación de Messenger

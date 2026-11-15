@@ -17,6 +17,37 @@ const path = require('path');
 const url = require('url');
 const { Server } = require('socket.io');
 
+// ==============================================================================
+// MULTER — Gestión de archivos adjuntos en el chat
+// ==============================================================================
+const multer = require('multer');
+
+const UPLOADS_DIR = path.join(__dirname, 'database', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) {
+  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
+}
+
+const multerStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const safeName = file.originalname.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
+    cb(null, Date.now() + '-' + safeName);
+  }
+});
+
+const uploadMiddleware = multer({
+  storage: multerStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB máximo
+  fileFilter: (req, file, cb) => {
+    const ALLOWED = /\.(pdf|doc|docx|xls|xlsx|png|jpg|jpeg|gif|webp|txt|csv|zip)$/i;
+    if (ALLOWED.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Tipo de archivo no permitido'), false);
+    }
+  }
+});
+
 const PORT = process.env.PORT || process.env.CHAT_PORT || 3001;
 const DAILY_EXP_HOURS = parseInt(process.env.DAILY_ROOM_EXPIRATION_HOURS || '24', 10);
 
@@ -200,7 +231,8 @@ function persistMessage(caseId, msgData) {
     time: msgData.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     date: msgData.date || new Date().toISOString().split('T')[0],
     read: !!msgData.read,
-    createdAt: msgData.createdAt || new Date().toISOString()
+    createdAt: msgData.createdAt || new Date().toISOString(),
+    attachment: msgData.attachment || null
   };
 
   const existingIdx = store[cleanId].findIndex(m => m.id === record.id);
@@ -810,9 +842,12 @@ function handleMessagesRequest(req, res, parsedUrl) {
 
       const caseId = data.caseId || data.caso_codigo || parsedUrl.query.caseId || 'CAS-00138';
       const text = data.text || data.mensaje || '';
-      if (!text) {
+      const hasAttachment = data.attachment && (data.attachment.dataUrl || data.attachment.url);
+
+      // Permitir mensaje vacío si trae adjunto
+      if (!text && !hasAttachment) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: false, message: 'El texto del mensaje es requerido.' }));
+        res.end(JSON.stringify({ success: false, message: 'El mensaje debe tener texto o un archivo adjunto.' }));
         return;
       }
 
@@ -822,7 +857,8 @@ function handleMessagesRequest(req, res, parsedUrl) {
         senderEmail: data.senderEmail || data.remitente_email || '',
         role: data.role || data.rol || 'citizen',
         text: text,
-        time: data.time || data.hora
+        time: data.time || data.hora,
+        attachment: data.attachment || null
       });
 
       // Emitir en tiempo real a la sala del caso Y globalmente
@@ -950,6 +986,63 @@ const server = http.createServer((req, res) => {
     pathname === '/api/mensajes.php'
   ) {
     handleMessagesRequest(req, res, parsedUrl);
+    return;
+  }
+
+  // 2.5 API de Subida de Archivos Adjuntos
+  if (pathname === '/api/upload' && req.method === 'POST') {
+    uploadMiddleware.single('file')(req, res, (err) => {
+      if (err) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: err.message || 'Error al subir el archivo.' }));
+        return;
+      }
+      if (!req.file) {
+        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ success: false, error: 'No se recibió ningún archivo.' }));
+        return;
+      }
+      const fileUrl = '/uploads/' + req.file.filename;
+      console.log('[Upload] Archivo guardado:', req.file.filename, '(' + Math.round(req.file.size / 1024) + ' KB)');
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: true,
+        filename: req.file.filename,
+        originalname: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size,
+        url: fileUrl
+      }));
+    });
+    return;
+  }
+
+  // 2.6 Servir archivos subidos (descargas)
+  if (pathname.startsWith('/uploads/')) {
+    const filename = path.basename(pathname);
+    const filePath = path.join(UPLOADS_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Archivo no encontrado');
+      return;
+    }
+    const ext = path.extname(filename).toLowerCase();
+    const mimeMap = {
+      '.pdf': 'application/pdf',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp',
+      '.txt': 'text/plain; charset=utf-8',
+      '.csv': 'text/csv; charset=utf-8',
+      '.zip': 'application/zip'
+    };
+    const contentType = mimeMap[ext] || 'application/octet-stream';
+    res.setHeader('Content-Disposition', 'inline; filename="' + filename + '"');
+    res.writeHead(200, { 'Content-Type': contentType });
+    fs.createReadStream(filePath).pipe(res);
     return;
   }
 

@@ -1351,6 +1351,17 @@
 
         <!-- Input de Envío tipo Messenger -->
         <div class="messenger-input-bar">
+          <!-- Input oculto para selección de archivo -->
+          <input type="file" id="messengerFileInput" style="display:none"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp,.txt,.csv,.zip"
+            onchange="window.onMessengerFileSelected()">
+          <!-- Barra de previsualización del archivo seleccionado -->
+          <div id="messengerFilePreviewBar" class="messenger-file-preview-bar" style="display:none">
+            <span id="messengerFilePreviewName" class="preview-file-name"></span>
+            <button type="button" class="preview-cancel-btn" onclick="window.cancelMessengerFile()" title="Cancelar adjunto">
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
           <button type="button" class="messenger-attach-btn" title="Adjuntar documento o prueba" onclick="window.attachFileInMessenger()">
             <i class="fas fa-paperclip"></i>
           </button>

@@ -17,6 +17,7 @@
     "@daily-co/daily-js": "^0.93.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.8",
+    "multer": "^2.5.0",
     "socket.io": "^4.8.4"
   }
 }
