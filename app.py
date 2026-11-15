@@ -10,6 +10,7 @@ import os
 import io
 import logging
 from flask import Flask, request, jsonify, send_file, send_from_directory
+from flask_cors import CORS
 from dotenv import load_dotenv
 
 # Cargar variables de entorno
@@ -77,13 +78,9 @@ def create_app(config_override=None):
     indice = Indice(app=app)
     app.indice_rag = indice
 
-    # Configuración de cabeceras CORS
-    @app.after_request
-    def habilitar_cors(response):
-        response.headers["Access-Control-Allow-Origin"] = "*"
-        response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
-        response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
-        return response
+    # Configuración CORS (Render, Vercel y desarrollo local).
+    # Flask-CORS responde también los preflight OPTIONS automáticamente.
+    CORS(app, resources={r"/*": {"origins": "*"}})
 
     # --------------------------------------------------------------------------
     # RUTAS DE SERVIDO WEB ESTÁTICO (UI FRONTEND)
@@ -296,9 +293,11 @@ app = create_app()
 
 if __name__ == "__main__":
     puerto = int(os.environ.get("PORT", 5000))
+    depurar = os.environ.get("FLASK_DEBUG", "0").strip().lower() in ("1", "true", "yes", "on")
     print(f"\n==================================================================")
     print(f" PUENTE CIUDADANO (ODS 16) - SERVIDOR AGENTE RAG & WEB INICIADO")
     print(f" Acceso Web: http://localhost:{puerto}")
     print(f" API RAG:    http://localhost:{puerto}/api/rag/estado")
+    print(f" Puerto Render (PORT): {puerto} | Depuración: {depurar}")
     print(f"==================================================================\n")
-    app.run(host="0.0.0.0", port=puerto, debug=True)
+    app.run(host="0.0.0.0", port=puerto, debug=depurar)

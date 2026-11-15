@@ -18,15 +18,27 @@
   'use strict';
 
   // ============================================================================
-  // CONFIGURACIÓN: URL base de la API Flask (puerto 5000)
+  // CONFIGURACIÓN: URL base de la API Flask
   // ============================================================================
+  // En Render/producción Flask sirve el frontend y la API en el mismo origen,
+  // por lo que las peticiones deben ser relativas ("/api/rag/...") para no
+  // depender de localhost. Se puede forzar una URL externa definiendo
+  // window.RAG_API_BASE antes de cargar este script.
   const RAG_API_BASE = (() => {
-    // En producción, usar la misma URL de la página (Flask sirve también el frontend)
-    if (window.location.port === '5000' || window.location.port === '') {
-      return window.location.origin;
+    if (typeof window === 'undefined') return '';
+
+    const configurada = window.RAG_API_BASE || window.PUENTE_RAG_API_BASE;
+    if (configurada) return String(configurada).replace(/\/+$/, '');
+
+    // Desarrollo local con el frontend servido por otro puerto (Node/Live Server):
+    // mantener la conexión al Flask local. En cualquier otro host, mismo origen.
+    const host = window.location.hostname;
+    const esLocal = host === 'localhost' || host === '127.0.0.1';
+    if (esLocal && window.location.port && window.location.port !== '5000') {
+      return `${window.location.protocol}//${host}:5000`;
     }
-    // En desarrollo con Live Server (puerto 5500) → Flask en 5000
-    return 'http://127.0.0.1:5000';
+
+    return '';
   })();
 
   // Estado interno del módulo RAG
