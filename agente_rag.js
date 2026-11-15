@@ -343,7 +343,10 @@
       });
 
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const tipoRespuesta = res.headers.get('content-type') || '';
+        const err = tipoRespuesta.indexOf('application/json') !== -1
+          ? await res.json().catch(() => ({}))
+          : {};
         throw new Error(err.mensaje || `Error HTTP ${res.status}`);
       }
 
@@ -369,6 +372,14 @@
       console.error('[RAG] Error al consultar el agente:', error);
       ocultar('ragLoadingState');
 
+      const esLocal = window.location.hostname === 'localhost' ||
+                      window.location.hostname === '127.0.0.1';
+      const ayuda = esLocal
+        ? `En desarrollo local el servidor Flask debe estar activo:<br>
+           <code style="background:#f1f5f9; padding:4px 10px; border-radius:4px; font-size:0.85rem;">python app.py</code>`
+        : `El servicio de orientación no respondió. Intenta de nuevo en unos segundos;
+           si el problema continúa, comunícate con un profesional desde el chat.`;
+
       // Mostrar error en el panel con mensaje amigable
       const resultCard = document.getElementById('ragResultadoCard');
       if (resultCard) {
@@ -378,8 +389,7 @@
             <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">⚠️</div>
             <h4 style="color:#b91c1c; margin-bottom:0.5rem;">No fue posible conectar con el agente</h4>
             <p style="color:#64748b; font-size:0.9rem; margin-bottom:1.25rem;">
-              El servidor Flask de orientación no está activo. Inicia el servidor con:<br>
-              <code style="background:#f1f5f9; padding:4px 10px; border-radius:4px; font-size:0.85rem;">python app.py</code>
+              ${ayuda}
             </p>
             <div style="display:flex; gap:0.75rem; justify-content:center; flex-wrap:wrap;">
               <button class="btn btn-secondary" onclick="window.openMessagesModal()">
@@ -394,7 +404,7 @@
       }
 
       if (typeof window.showToast === 'function') {
-        window.showToast('No se pudo conectar con el Agente RAG. Verifica que el servidor esté activo.', 'warning');
+        window.showToast('No se pudo conectar con el Agente RAG. Intenta nuevamente en unos segundos.', 'warning');
       }
 
     } finally {

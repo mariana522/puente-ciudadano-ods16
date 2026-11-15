@@ -1,0 +1,43 @@
+# ==============================================================================
+# BLUEPRINT DE RENDER - PUENTE CIUDADANO ODS 16
+# ------------------------------------------------------------------------------
+# Dos servicios desde el mismo repositorio:
+#   1) puente-ciudadano-ods16  -> Node (server.js): UI + Socket.io + API REST
+#   2) puente-rag-ods16        -> Flask (app.py):  Agente RAG /api/rag/*
+#
+# El servicio Node reenvía /api/rag/* a RAG_SERVICE_URL (proxy reverso), por lo
+# que el navegador usa rutas relativas y no necesita CORS ni URLs de localhost.
+#
+# Uso: Render -> New + -> Blueprint -> seleccionar este repositorio.
+# Si los servicios ya existen creados a mano, no hace falta el blueprint:
+# basta definir RAG_SERVICE_URL en el servicio Node (ver DEPLOY_RAG_RENDER.md).
+# ==============================================================================
+services:
+  - type: web
+    name: puente-ciudadano-ods16
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: RAG_SERVICE_URL
+        fromService:
+          type: web
+          name: puente-rag-ods16
+          property: host
+
+  - type: web
+    name: puente-rag-ods16
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && (python sembrar_normativa.py || echo "Aviso: siembra de normativas omitida")
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --timeout 180 --workers 1 --threads 4 app:app
+    healthCheckPath: /api/rag/estado
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FLASK_DEBUG
+        value: "0"
+      - key: GEMINI_API_KEY
+        sync: false

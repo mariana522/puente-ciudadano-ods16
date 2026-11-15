@@ -51,6 +51,25 @@ const uploadMiddleware = multer({
 const PORT = process.env.PORT || process.env.CHAT_PORT || 3001;
 const DAILY_EXP_HOURS = parseInt(process.env.DAILY_ROOM_EXPIRATION_HOURS || '24', 10);
 
+// ==============================================================================
+// SERVICIO RAG (FLASK) - URL DESTINO DEL PROXY REVERSO
+// ------------------------------------------------------------------------------
+// En Render el frontend se sirve desde este servidor Node, pero el agente RAG
+// vive en un servicio Flask aparte. Este servidor reenvía /api/rag/* hacia
+// RAG_SERVICE_URL, de modo que el navegador siempre use rutas relativas
+// ("/api/rag/orientar") y no necesite CORS ni URLs de localhost.
+//   - Producción (Render): RAG_SERVICE_URL=https://puente-rag-ods16.onrender.com
+//   - Desarrollo local:    python app.py  ->  http://127.0.0.1:5000 (por defecto)
+// ==============================================================================
+function getRagServiceUrl() {
+  const configurada = process.env.RAG_SERVICE_URL || process.env.RAG_API_URL || process.env.FLASK_RAG_URL;
+  let base = (configurada || 'http://127.0.0.1:5000').trim();
+  if (!base) base = 'http://127.0.0.1:5000';
+  // Render entrega sólo el host al usar fromService: agregar protocolo.
+  if (!/^https?:\/\//i.test(base)) base = 'https://' + base;
+  return base.replace(/\/+$/, '');
+}
+
 // Asegurar directorio de base de datos persistente
 const DB_DIR = path.join(__dirname, 'database');
 if (!fs.existsSync(DB_DIR)) {
@@ -928,6 +947,85 @@ function serveStaticFile(req, res, pathname) {
   });
 }
 
+// Reenvía las peticiones /api/rag/* al servicio Flask cuando el frontend es
+// servido por este Node (Render). Así el navegador sólo usa rutas relativas.
+function proxyRagRequest(req, res) {
+  const base = getRagServiceUrl();
+  let destino;
+  try {
+    destino = new URL(base + req.url);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      status: 'error',
+      codigo: 'rag_url_invalida',
+      mensaje: 'RAG_SERVICE_URL no es una URL válida: ' + base
+    }));
+    return;
+  }
+
+  const transporte = destino.protocol === 'https:' ? https : http;
+
+  const headers = Object.assign({}, req.headers);
+  delete headers['accept-encoding']; // evitar compresión doble al reenviar
+  headers.host = destino.host;
+  headers['x-forwarded-host'] = req.headers.host || '';
+  headers['x-forwarded-proto'] = (req.socket && req.socket.encrypted) ? 'https' : 'http';
+
+  let respondido = false;
+  const responderError = (codigoHttp, codigo, mensaje) => {
+    if (respondido) return;
+    respondido = true;
+    if (res.headersSent) {
+      res.end();
+      return;
+    }
+    res.writeHead(codigoHttp, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-store'
+    });
+    res.end(JSON.stringify({ status: 'error', codigo, mensaje, servicio_rag: base }));
+  };
+
+  const solicitud = transporte.request({
+    protocol: destino.protocol,
+    hostname: destino.hostname,
+    port: destino.port || (destino.protocol === 'https:' ? 443 : 80),
+    method: req.method,
+    path: destino.pathname + destino.search,
+    headers
+  }, (respuesta) => {
+    respondido = true;
+    const headersRespuesta = {};
+    Object.keys(respuesta.headers).forEach((clave) => {
+      if (['connection', 'keep-alive', 'transfer-encoding', 'upgrade'].indexOf(clave) !== -1) return;
+      // Este servidor ya define CORS para todas las respuestas: evitar duplicados.
+      if (clave.indexOf('access-control-') === 0) return;
+      headersRespuesta[clave] = respuesta.headers[clave];
+    });
+    res.writeHead(respuesta.statusCode || 502, headersRespuesta);
+    respuesta.pipe(res);
+  });
+
+  // Gemini puede tardar: 90s de margen antes de abortar.
+  solicitud.setTimeout(90000, () => {
+    solicitud.destroy(new Error('timeout'));
+  });
+
+  solicitud.on('error', (err) => {
+    const esTimeout = /timeout/i.test(err.message || '');
+    console.error('[RAG Proxy] Fallo al contactar ' + base + ':', err.message);
+    responderError(
+      esTimeout ? 504 : 502,
+      esTimeout ? 'rag_timeout' : 'rag_no_disponible',
+      'El servicio de orientación (Flask RAG) no está disponible en este momento. ' +
+      'Verifica que el servicio esté desplegado y que RAG_SERVICE_URL apunte a su URL pública.'
+    );
+  });
+
+  req.pipe(solicitud);
+}
+
 // Crear servidor HTTP
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -951,8 +1049,18 @@ const server = http.createServer((req, res) => {
       service: 'Puente Ciudadano ODS 16 Backend & Realtime Sockets',
       port: PORT,
       timestamp: new Date().toISOString(),
-      roomsCount: io.sockets.adapter.rooms.size
+      roomsCount: io.sockets.adapter.rooms.size,
+      rag: {
+        proxy: true,
+        servicio_configurado: Boolean(process.env.RAG_SERVICE_URL || process.env.RAG_API_URL || process.env.FLASK_RAG_URL)
+      }
     }));
+    return;
+  }
+
+  // 1.2 Proxy reverso hacia el Agente RAG (Flask en otro servicio/contenedor)
+  if (pathname === '/api/rag' || pathname.indexOf('/api/rag/') === 0) {
+    proxyRagRequest(req, res);
     return;
   }
 
@@ -1059,6 +1167,17 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // 3.5 Cualquier otra ruta de API desconocida debe responder JSON (no index.html)
+  if (pathname.indexOf('/api/') === 0 || pathname.indexOf('/backend/') === 0) {
+    res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({
+      success: false,
+      error: 'not_found',
+      mensaje: 'Ruta de API no encontrada: ' + pathname
+    }));
+    return;
+  }
+
   // 4. Servir frontend estático
   serveStaticFile(req, res, pathname);
 });
@@ -1162,6 +1281,7 @@ server.listen(PORT, () => {
   console.log('- Web & Frontend: http://localhost:' + PORT + '/');
   console.log('- Socket.io Realtime: http://localhost:' + PORT);
   console.log('- Healthcheck: http://localhost:' + PORT + '/health');
+  console.log('- Proxy Agente RAG (/api/rag/*): ' + getRagServiceUrl());
   console.log('- Persistencia Mensajes: ' + MESSAGES_FILE);
   const confDaily = getDailyRoomUrlConfig();
   const jDomain = getJitsiDomain();
