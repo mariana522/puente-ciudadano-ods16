@@ -1995,8 +1995,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Renderizar adjunto si existe
       let adjuntoHTML = '';
-      if (msg.attachment && (msg.attachment.dataUrl || msg.attachment.url)) {
-        const ext = (msg.attachment.originalname || '').split('.').pop().toLowerCase();
+      if (msg.attachment && (msg.attachment.dataUrl || msg.attachment.url || msg.attachment.id)) {
+        const att = msg.attachment;
+        const attName = escapeHtmlSeguro(att.originalname || 'adjunto');
+        const ext = (att.originalname || '').split('.').pop().toLowerCase();
         const iconClass = ['pdf'].includes(ext) ? 'fa-file-pdf' :
                           ['png','jpg','jpeg','gif','webp'].includes(ext) ? 'fa-file-image' :
                           ['doc','docx'].includes(ext) ? 'fa-file-word' :
@@ -2004,28 +2006,29 @@ document.addEventListener('DOMContentLoaded', () => {
                           ['zip'].includes(ext) ? 'fa-file-archive' :
                           'fa-file-alt';
 
-        // Prioridad: base64 inline (Render-safe) > URL de servidor
+        // Prioridad: base64 inline (si es pequeño) > URL del servidor (memoria)
         const isImage = ['png','jpg','jpeg','gif','webp'].includes(ext);
-        const fileHref = msg.attachment.dataUrl || (() => {
-          const rawUrl = msg.attachment.url || '';
+        const rawUrl = att.url || (att.id ? '/api/attachments/' + encodeURIComponent(att.id) : '');
+        const fileHref = att.dataUrl || (() => {
+          if (!rawUrl) return '#';
           if (rawUrl.startsWith('http')) return rawUrl;
           const base = window.PUENTE_CONFIG ? window.PUENTE_CONFIG.getServerUrl() : 'http://localhost:3001';
           return base.replace(/\/$/, '') + rawUrl;
         })();
 
-        if (isImage && msg.attachment.dataUrl) {
+        if (isImage) {
           // Vista previa inline para imágenes
           adjuntoHTML = `
-            <a href="${fileHref}" target="_blank" rel="noopener" class="chat-attachment-chip chat-attachment-image" title="${msg.attachment.originalname}">
-              <img src="${fileHref}" alt="${msg.attachment.originalname}" style="max-width:160px;max-height:120px;border-radius:6px;display:block;margin:0.3rem 0;">
-              <span class="chip-name">${msg.attachment.originalname}</span>
+            <a href="${fileHref}" target="_blank" rel="noopener" class="chat-attachment-chip chat-attachment-image" title="${attName}">
+              <img src="${fileHref}" alt="${attName}" style="max-width:160px;max-height:120px;border-radius:6px;display:block;margin:0.3rem 0;">
+              <span class="chip-name">${attName}</span>
               <span class="chip-download"><i class="fas fa-download"></i></span>
             </a>`;
         } else {
           adjuntoHTML = `
-            <a href="${fileHref}" target="_blank" rel="noopener" class="chat-attachment-chip" title="Abrir ${msg.attachment.originalname}" download="${msg.attachment.originalname}">
+            <a href="${fileHref}" target="_blank" rel="noopener" class="chat-attachment-chip" title="Abrir ${attName}" download="${attName}">
               <i class="fas ${iconClass} chip-icon"></i>
-              <span class="chip-name">${msg.attachment.originalname}</span>
+              <span class="chip-name">${attName}</span>
               <span class="chip-download"><i class="fas fa-download"></i></span>
             </a>`;
         }
@@ -2047,7 +2050,17 @@ document.addEventListener('DOMContentLoaded', () => {
     threadEl.scrollTop = threadEl.scrollHeight;
   };
 
-  // Helper: leer archivo como base64 (funciona en localhost y Render sin disco)
+  // Helper: escapar texto antes de insertarlo con innerHTML
+  function escapeHtmlSeguro(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // Helper: leer archivo como base64 (respaldo local para archivos pequeños)
   function leerArchivoBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -2055,6 +2068,39 @@ document.addEventListener('DOMContentLoaded', () => {
       reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
       reader.readAsDataURL(file);
     });
+  }
+
+  // Sube el adjunto a server.js usando FormData. No se debe fijar el header
+  // Content-Type manualmente: el navegador agrega el boundary multipart.
+  async function subirArchivoAdjunto(file) {
+    const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+      ? window.PUENTE_CONFIG.getApiUrl('api/upload')
+      : '/api/upload';
+
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      body: formData,
+      cache: 'no-store'
+    });
+
+    let json = null;
+    try { json = await res.json(); } catch (e) {}
+
+    if (!res.ok || !json || !json.success) {
+      throw new Error((json && json.error) || ('HTTP ' + res.status));
+    }
+
+    return {
+      id: json.id || null,
+      originalname: json.originalname || file.name,
+      mimetype: json.mimetype || file.type || 'application/octet-stream',
+      size: typeof json.size === 'number' ? json.size : file.size,
+      url: json.url || (json.id ? '/api/attachments/' + encodeURIComponent(json.id) : null),
+      dataUrl: json.dataUrl || null
+    };
   }
 
     // Enviar mensaje en el Messenger (Bidireccional en Tiempo Real)
@@ -2072,26 +2118,40 @@ document.addEventListener('DOMContentLoaded', () => {
     const user = state.currentUser || { name: 'Mariana Sibaja', role: 'citizen', email: 'mariana.sibaja@ejemplo.com' };
     const caseId = state.activeMessengerCaseId || 'CAS-00138';
 
-    // --- Estrategia de adjunto: base64 inline (compatible con Render/disco efímero) ---
+    const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;   // límite del backend: 10 MB
+    const MAX_INLINE_BYTES = 2 * 1024 * 1024;   // fallback base64 sólo si es pequeño
+
+    // --- Adjunto: primero /api/upload en memoria; base64 sólo como respaldo ---
     let attachment = null;
     if (selectedFile) {
-      // Validar tamaño: máx 8 MB para base64 seguro
-      if (selectedFile.size > 8 * 1024 * 1024) {
+      if (selectedFile.size > MAX_UPLOAD_BYTES) {
         showToast('El archivo supera el límite de 8 MB. Por favor comprime el documento.', 'error');
         return;
       }
+
       try {
-        const dataUrl = await leerArchivoBase64(selectedFile);
-        attachment = {
-          originalname: selectedFile.name,
-          mimetype: selectedFile.type || 'application/octet-stream',
-          size: selectedFile.size,
-          dataUrl: dataUrl   // base64 completo — no depende del disco del servidor
-        };
+        attachment = await subirArchivoAdjunto(selectedFile);
       } catch (err) {
-        console.error('[Messenger] Error leyendo archivo:', err);
-        showToast('No se pudo procesar el archivo. Intenta de nuevo.', 'error');
-        return;
+        console.warn('[Messenger] No se pudo subir a /api/upload, intentando respaldo base64:', err);
+
+        if (selectedFile.size > MAX_INLINE_BYTES) {
+          showToast('No se pudo subir el archivo. Verifica la conexión.', 'error');
+          return;
+        }
+
+        try {
+          const dataUrl = await leerArchivoBase64(selectedFile);
+          attachment = {
+            originalname: selectedFile.name,
+            mimetype: selectedFile.type || 'application/octet-stream',
+            size: selectedFile.size,
+            dataUrl: dataUrl
+          };
+        } catch (err2) {
+          console.error('[Messenger] Error leyendo archivo:', err2);
+          showToast('No se pudo subir el archivo. Verifica la conexión.', 'error');
+          return;
+        }
       }
     }
 
@@ -2157,7 +2217,7 @@ document.addEventListener('DOMContentLoaded', () => {
                       ['xls','xlsx'].includes(ext) ? 'fa-file-excel' :
                       'fa-file-alt';
 
-    if (previewName) previewName.innerHTML = `<i class="fas ${iconClass}"></i> ${file.name} <span style="color:#94a3b8;font-size:0.75rem;">(${(file.size/1024).toFixed(1)} KB)</span>`;
+    if (previewName) previewName.innerHTML = `<i class="fas ${iconClass}"></i> ${escapeHtmlSeguro(file.name)} <span style="color:#94a3b8;font-size:0.75rem;">(${(file.size/1024).toFixed(1)} KB)</span>`;
     if (previewBar) previewBar.style.display = 'flex';
   };
 
@@ -2210,15 +2270,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 4. Notificacion flotante sutil si el mensaje proviene de la contraparte
       if (!isMine) {
-        showToast(`💬 Mensaje de ${msg.sender} en #${msg.caseId}: "${msg.text.substring(0, 35)}..."`, 'info');
+        const previewText = (msg.text || (msg.attachment && msg.attachment.originalname) || '').substring(0, 35);
+        showToast(`💬 Mensaje de ${msg.sender} en #${msg.caseId}: "${previewText}"`, 'info');
       }
     });
 
     // Carga de historial sincronizada desde el servidor
     window.PuenteDB.realtime.on('history_loaded', () => {
+      // Sólo se refresca el hilo: volver a renderizar conversaciones re-emitía
+      // join_case y podía realimentar el ciclo de historial.
       if (state.activeMessengerCaseId) {
         window.renderMessengerThread(state.activeMessengerCaseId);
-        window.renderMessengerConversations(state.activeMessengerCaseId);
       }
     });
 

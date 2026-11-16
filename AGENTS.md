@@ -7,7 +7,8 @@ Spanish-language academic platform for ODS 16 (Colombian legal/social orientatio
 ## Runtime surfaces
 
 - **Node HTTP server — `server.js`, port 3001 (`npm start`)**
-  Serves static files, Socket.io realtime chat, and REST: `/api/casos`, `/api/mensajes`, `/api/agenda`, `/api/upload`, `/api/daily_room`, `/uploads/*`, `/health`.
+  Serves static files, Socket.io realtime chat, and REST: `/api/casos`, `/api/mensajes`, `/api/agenda`, `/api/upload`, `/api/attachments/:id`, `/api/daily_room`, `/uploads/*`, `/health`.
+  `/api/upload` usa Multer en memoria (10 MB) y `/api/attachments/:id` sirve el archivo desde un almacén acotado en memoria (TTL/cupo); los adjuntos no sobreviven un reinicio. `/uploads/*` queda sólo para archivos heredados en disco.
   Also **proxies `/api/rag/*` to the Flask service** (`RAG_SERVICE_URL`, default `http://127.0.0.1:5000`), so the browser always calls same-origin relative URLs.
   Persists to JSON files under `database/`: `messages_store.json`, `cases_store.json`, plus `agenda_store.json` / `rooms_store.json` at runtime.
 - **Flask RAG — `app.py`, port 5000 (`python app.py`)**

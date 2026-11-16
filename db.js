@@ -905,7 +905,9 @@ const PuenteDB = {
           text: message.text,
           time: message.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           date: message.date || new Date().toISOString().split('T')[0],
-          read: !!message.read
+          read: !!message.read,
+          attachment: message.attachment || null,
+          createdAt: message.createdAt || new Date().toISOString()
         };
 
         // Deduplicación estricta por ID
@@ -916,7 +918,25 @@ const PuenteDB = {
           allMessages[cleanId].push(record);
         }
 
-        saveToStorage(STORAGE_KEYS.MESSAGES, allMessages);
+        const saved = saveToStorage(STORAGE_KEYS.MESSAGES, allMessages);
+
+        // La cuota de localStorage (~5 MB) no debe impedir enviar el mensaje.
+        // Si falla, se conserva la URL del servidor y se descarta el base64.
+        if (!saved) {
+          Object.keys(allMessages).forEach(cid => {
+            (allMessages[cid] || []).forEach(m => {
+              if (m && m.attachment && m.attachment.dataUrl) {
+                delete m.attachment.dataUrl;
+                if (!m.attachment.url && m.attachment.id) {
+                  m.attachment.url = '/api/attachments/' + encodeURIComponent(m.attachment.id);
+                }
+              }
+            });
+          });
+          if (!saveToStorage(STORAGE_KEYS.MESSAGES, allMessages)) {
+            console.warn('[PuenteDB] No se pudo guardar el historial local por cuota; el mensaje se enviará al servidor.');
+          }
+        }
 
         // Transmisión bidireccional en tiempo real (Sockets y Broadcast)
         if (shouldBroadcast && PuenteDB.realtime) {
@@ -1256,6 +1276,7 @@ const PuenteDB = {
       initialized: false,
       activeCaseId: null,
       activeUser: null,
+      joinedCaseId: null,
 
       init() {
         if (this.initialized) return;
@@ -1311,16 +1332,20 @@ const PuenteDB = {
             this.socket.on('connect', () => {
               console.log('[PuenteDB Realtime] Socket.io conectado con id:', this.socket.id);
               // Re-unir inmediatamente a la sala si ya se había abierto un caso
+              this.joinedCaseId = null;
               if (this.activeCaseId) {
                 console.log('[PuenteDB Realtime] Uniéndose a sala de caso activo:', this.activeCaseId);
                 this.socket.emit('join_case', { caseId: this.activeCaseId, user: this.activeUser });
+                this.joinedCaseId = this.activeCaseId;
               }
             });
 
             this.socket.on('reconnect', () => {
               console.log('[PuenteDB Realtime] Socket.io reconectado.');
+              this.joinedCaseId = null;
               if (this.activeCaseId) {
                 this.socket.emit('join_case', { caseId: this.activeCaseId, user: this.activeUser });
+                this.joinedCaseId = this.activeCaseId;
               }
             });
 
@@ -1338,12 +1363,27 @@ const PuenteDB = {
 
             // Carga de historial enviada al conectarse
             const handleHistory = (msgs) => {
-              if (Array.isArray(msgs)) {
-                msgs.forEach(m => {
-                  if (m && m.caseId) PuenteDB.messages.insert(m.caseId, m, false);
-                });
-                this.notifyListeners('history_loaded', msgs);
-              }
+              if (!Array.isArray(msgs) || msgs.length === 0) return;
+
+              const knownByCase = {};
+              let hasNew = false;
+
+              msgs.forEach(m => {
+                if (!m || !m.caseId) return;
+                if (!knownByCase[m.caseId]) {
+                  knownByCase[m.caseId] = new Set(
+                    PuenteDB.messages.getByCase(m.caseId).map(existing => existing.id)
+                  );
+                }
+                if (!knownByCase[m.caseId].has(m.id)) hasNew = true;
+                // Sin re-broadcast: el historial no debe reenviarse al servidor.
+                PuenteDB.messages.insert(m.caseId, m, false);
+                knownByCase[m.caseId].add(m.id);
+              });
+
+              // Notificar sólo si realmente llegó algo nuevo; de lo contrario un
+              // re-render puede re-emitir join_case y provocar un bucle infinito.
+              if (hasNew) this.notifyListeners('history_loaded', msgs);
             };
 
             this.socket.on('case_history', handleHistory);
@@ -1370,16 +1410,22 @@ const PuenteDB = {
 
       joinCase(caseId, user) {
         if (!caseId) return;
-        this.activeCaseId = caseId;
+        const key = String(caseId);
+        const caseChanged = this.activeCaseId !== key;
+
+        this.activeCaseId = key;
         if (user) this.activeUser = user;
 
-        // Sincronizar de inmediato en el motor de polling
-        if (PuenteDB.polling) {
-          PuenteDB.polling.setActiveCase(caseId);
+        // Sincronizar con el motor de polling sólo al cambiar de expediente.
+        if (caseChanged && PuenteDB.polling) {
+          PuenteDB.polling.setActiveCase(key);
         }
 
-        if (this.socket && this.socket.connected) {
-          this.socket.emit('join_case', { caseId, user: this.activeUser });
+        // Idempotente: los re-renderizados del Messenger no deben re-emitir
+        // join_case (eso reenviaba el historial y saturaba el servidor).
+        if (this.socket && this.socket.connected && this.joinedCaseId !== key) {
+          this.socket.emit('join_case', { caseId: key, user: this.activeUser });
+          this.joinedCaseId = key;
         }
       },
 
@@ -1396,7 +1442,10 @@ const PuenteDB = {
         } else {
           // Fallback REST si el socket aún no ha terminado de conectar
           try {
-            fetch('/api/mensajes', {
+            const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+              ? window.PUENTE_CONFIG.getApiUrl('api/mensajes')
+              : '/api/mensajes';
+            fetch(endpoint, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(record)

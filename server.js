@@ -18,7 +18,14 @@ const url = require('url');
 const { Server } = require('socket.io');
 
 // ==============================================================================
-// MULTER — Gestión de archivos adjuntos en el chat
+// ADJUNTOS DEL CHAT — Procesamiento 100% en memoria
+// ------------------------------------------------------------------------------
+// Render (y la mayoría de PaaS) usa un sistema de archivos efímero: escribir en
+// database/uploads funciona al inicio pero puede desaparecer o fallar entre
+// instancias/reinicios. Por eso el archivo se recibe con Multer en memoria y se
+// publica desde un almacén acotado (TTL + límite total). También se devuelve un
+// Data URL para archivos pequeños, de modo que la vista previa no dependa del
+// disco. La ruta heredada /uploads/* se conserva para archivos antiguos.
 // ==============================================================================
 const multer = require('multer');
 
@@ -27,17 +34,15 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
 }
 
-const multerStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
-  filename: (req, file, cb) => {
-    const safeName = file.originalname.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9._-]/g, '');
-    cb(null, Date.now() + '-' + safeName);
-  }
-});
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB por archivo
+const MAX_JSON_BODY_BYTES = 8 * 1024 * 1024; // 8 MB para /api/mensajes
+const DATA_URL_MAX_BYTES = 512 * 1024; // base64 inline sólo para vistas previas
+const ATTACHMENTS_MAX_TOTAL_BYTES = 64 * 1024 * 1024; // 64 MB en memoria
+const ATTACHMENTS_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
 
 const uploadMiddleware = multer({
-  storage: multerStorage,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB máximo
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (req, file, cb) => {
     const ALLOWED = /\.(pdf|doc|docx|xls|xlsx|png|jpg|jpeg|gif|webp|txt|csv|zip)$/i;
     if (ALLOWED.test(file.originalname)) {
@@ -47,6 +52,64 @@ const uploadMiddleware = multer({
     }
   }
 });
+
+// Acepta los nombres de campo usados por distintos clientes del chat.
+const uploadFieldsMiddleware = uploadMiddleware.fields([
+  { name: 'file', maxCount: 1 },
+  { name: 'archivo', maxCount: 1 },
+  { name: 'adjunto', maxCount: 1 }
+]);
+
+const attachmentStore = new Map(); // id -> { buffer, mimetype, originalname, size, createdAt }
+let attachmentStoreBytes = 0;
+let attachmentSequence = 0;
+
+function pruneAttachmentStore() {
+  const now = Date.now();
+  for (const [id, item] of attachmentStore) {
+    if (now - item.createdAt > ATTACHMENTS_TTL_MS) {
+      attachmentStore.delete(id);
+      attachmentStoreBytes -= item.size;
+    }
+  }
+}
+
+function saveAttachmentInMemory(file) {
+  pruneAttachmentStore();
+  // Liberar los adjuntos más antiguos si se supera el presupuesto de memoria.
+  while (attachmentStoreBytes + file.size > ATTACHMENTS_MAX_TOTAL_BYTES && attachmentStore.size > 0) {
+    const [oldestId, oldest] = attachmentStore.entries().next().value;
+    attachmentStore.delete(oldestId);
+    attachmentStoreBytes -= oldest.size;
+  }
+
+  const id = 'att_' + Date.now().toString(36) + '_' + (++attachmentSequence).toString(36);
+  attachmentStore.set(id, {
+    buffer: file.buffer,
+    mimetype: file.mimetype || 'application/octet-stream',
+    originalname: file.originalname || 'adjunto',
+    size: file.size,
+    createdAt: Date.now()
+  });
+  attachmentStoreBytes += file.size;
+  return id;
+}
+
+function getAttachmentFromMemory(id) {
+  if (!id) return null;
+  const item = attachmentStore.get(id);
+  if (!item) return null;
+  if (Date.now() - item.createdAt > ATTACHMENTS_TTL_MS) {
+    attachmentStore.delete(id);
+    attachmentStoreBytes -= item.size;
+    return null;
+  }
+  return item;
+}
+
+function hasAttachmentData(attachment) {
+  return !!(attachment && (attachment.dataUrl || attachment.url || attachment.id));
+}
 
 const PORT = process.env.PORT || process.env.CHAT_PORT || 3001;
 const DAILY_EXP_HOURS = parseInt(process.env.DAILY_ROOM_EXPIRATION_HOURS || '24', 10);
@@ -852,8 +915,26 @@ function handleMessagesRequest(req, res, parsedUrl) {
 
   if (req.method === 'POST') {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let bodyTooLarge = false;
+
+    req.on('data', chunk => {
+      if (bodyTooLarge) return;
+      body += chunk;
+      // Evita que un cliente antiguo con base64 gigante agote la memoria del proceso.
+      if (body.length > MAX_JSON_BODY_BYTES) {
+        bodyTooLarge = true;
+        res.writeHead(413, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: false,
+          error: 'payload_too_large',
+          message: 'El mensaje supera el tamaño permitido. Adjunta el archivo con /api/upload.'
+        }));
+      }
+    });
+
     req.on('end', () => {
+      if (bodyTooLarge) return;
+
       let data = {};
       try {
         if (body) data = JSON.parse(body);
@@ -861,7 +942,7 @@ function handleMessagesRequest(req, res, parsedUrl) {
 
       const caseId = data.caseId || data.caso_codigo || parsedUrl.query.caseId || 'CAS-00138';
       const text = data.text || data.mensaje || '';
-      const hasAttachment = data.attachment && (data.attachment.dataUrl || data.attachment.url);
+      const hasAttachment = hasAttachmentData(data.attachment);
 
       // Permitir mensaje vacío si trae adjunto
       if (!text && !hasAttachment) {
@@ -1097,31 +1178,83 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // 2.5 API de Subida de Archivos Adjuntos
+  // 2.5 API de Subida de Archivos Adjuntos (memoria, sin escribir en disco)
   if (pathname === '/api/upload' && req.method === 'POST') {
-    uploadMiddleware.single('file')(req, res, (err) => {
+    uploadFieldsMiddleware(req, res, (err) => {
       if (err) {
-        res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: false, error: err.message || 'Error al subir el archivo.' }));
+        const esTamano = err && err.code === 'LIMIT_FILE_SIZE';
+        const status = esTamano ? 413 : 400;
+        res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({
+          success: false,
+          error: esTamano
+            ? 'El archivo supera el límite de 10 MB.'
+            : (err.message || 'Error al procesar el archivo adjunto.')
+        }));
         return;
       }
-      if (!req.file) {
+
+      const files = req.files || {};
+      const file = (files.file && files.file[0]) ||
+                   (files.archivo && files.archivo[0]) ||
+                   (files.adjunto && files.adjunto[0]) ||
+                   req.file ||
+                   null;
+
+      if (!file) {
         res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });
-        res.end(JSON.stringify({ success: false, error: 'No se recibió ningún archivo.' }));
+        res.end(JSON.stringify({
+          success: false,
+          error: 'No se recibió ningún archivo. Envía el campo "file" en el FormData.'
+        }));
         return;
       }
-      const fileUrl = '/uploads/' + req.file.filename;
-      console.log('[Upload] Archivo guardado:', req.file.filename, '(' + Math.round(req.file.size / 1024) + ' KB)');
+
+      const id = saveAttachmentInMemory(file);
+      const mimetype = file.mimetype || 'application/octet-stream';
+      const dataUrl = file.size <= DATA_URL_MAX_BYTES
+        ? 'data:' + mimetype + ';base64,' + file.buffer.toString('base64')
+        : null;
+
+      console.log('[Upload] Adjunto en memoria:', id, file.originalname, '(' + Math.round(file.size / 1024) + ' KB)');
       res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify({
         success: true,
-        filename: req.file.filename,
-        originalname: req.file.originalname,
-        mimetype: req.file.mimetype,
-        size: req.file.size,
-        url: fileUrl
+        id: id,
+        filename: id,
+        originalname: file.originalname,
+        mimetype: mimetype,
+        size: file.size,
+        storage: 'memory',
+        url: '/api/attachments/' + encodeURIComponent(id),
+        dataUrl: dataUrl
       }));
     });
+    return;
+  }
+
+  // 2.55 Servir adjuntos desde memoria (Render-safe, sin disco)
+  if (pathname.startsWith('/api/attachments/') && req.method === 'GET') {
+    const id = decodeURIComponent(pathname.slice('/api/attachments/'.length));
+    const item = getAttachmentFromMemory(id);
+    if (!item) {
+      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({
+        success: false,
+        error: 'attachment_not_found',
+        mensaje: 'El adjunto ya no está disponible en memoria. Vuelve a subirlo.'
+      }));
+      return;
+    }
+
+    const safeName = String(item.originalname).replace(/["\r\n]/g, '_');
+    res.writeHead(200, {
+      'Content-Type': item.mimetype,
+      'Content-Length': item.size,
+      'Content-Disposition': 'inline; filename="' + safeName + '"',
+      'Cache-Control': 'private, max-age=3600'
+    });
+    res.end(item.buffer);
     return;
   }
 
@@ -1191,7 +1324,9 @@ const io = new Server(server, {
   },
   transports: ['websocket', 'polling'],
   pingTimeout: 30000,
-  pingInterval: 25000
+  pingInterval: 25000,
+  // Permite mensajes con Data URL de respaldo (el flujo normal usa /api/upload).
+  maxHttpBufferSize: 16 * 1024 * 1024
 });
 
 io.on('connection', (socket) => {
@@ -1201,10 +1336,16 @@ io.on('connection', (socket) => {
     if (!caseId) return;
 
     const roomName = getRoomName(caseId);
+    const alreadyInRoom = socket.activeRoomName === roomName && socket.rooms.has(roomName);
+
     socket.join(roomName);
     socket.activeCaseId = caseId;
     socket.activeRoomName = roomName;
     socket.user = user;
+
+    // Re-renderizados del cliente pueden re-emitir join_case: no reenviar el
+    // historial ni notificar de nuevo si la sala ya estaba unida.
+    if (alreadyInRoom) return;
 
     console.log('[Socket.io] ' + (user?.name || socket.id) + ' (' + (user?.role || 'user') + ') se unió a la sala ' + roomName);
 
@@ -1221,12 +1362,14 @@ io.on('connection', (socket) => {
 
   const handleIncomingMessage = (msgData) => {
     const { caseId, text } = msgData || {};
-    if (!caseId || !text) return;
+    // Un mensaje puede venir sólo con adjunto (sin texto).
+    if (!caseId || (!text && !hasAttachmentData(msgData && msgData.attachment))) return;
 
     const roomName = getRoomName(caseId);
     const messageRecord = persistMessage(caseId, msgData);
+    const preview = (messageRecord.text || '[adjunto] ' + (messageRecord.attachment?.originalname || '')).substring(0, 35);
 
-    console.log('[Socket.io] Mensaje en ' + roomName + ' de ' + messageRecord.sender + ': "' + text.substring(0, 35) + '..."');
+    console.log('[Socket.io] Mensaje en ' + roomName + ' de ' + messageRecord.sender + ': "' + preview + '"');
 
     io.to(roomName).emit('receive_message', messageRecord);
     io.to(roomName).emit('new_message', messageRecord);
