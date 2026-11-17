@@ -627,7 +627,8 @@ const PuenteDB = {
         });
       },
 
-      insert(newCase) {
+      insert(newCase, options = {}) {
+        const shouldSyncRemote = options.remote !== false;
         const cases = this.getAll();
         const record = {
           id: newCase.id || `CAS-00${Math.floor(100 + Math.random() * 900)}`,
@@ -656,11 +657,12 @@ const PuenteDB = {
           cases.unshift(record);
         }
         saveToStorage(STORAGE_KEYS.CASES, cases);
-        if (PuenteDB.mysql) PuenteDB.mysql.createCase(record);
+        if (shouldSyncRemote && PuenteDB.mysql) PuenteDB.mysql.createCase(record);
         return record;
       },
 
-      update(caseId, updates) {
+      update(caseId, updates, options = {}) {
+        const shouldSyncRemote = options.remote !== false;
         const cases = this.getAll();
         const index = cases.findIndex(c => c.id === caseId);
         if (index === -1) return null;
@@ -672,7 +674,7 @@ const PuenteDB = {
         };
 
         saveToStorage(STORAGE_KEYS.CASES, cases);
-        if (PuenteDB.mysql) {
+        if (shouldSyncRemote && PuenteDB.mysql) {
           PuenteDB.mysql.updateCaseStatus(
             caseId, 
             updates.status || cases[index].status, 
@@ -1177,6 +1179,21 @@ const PuenteDB = {
         }
       },
 
+      notifyCaseUpdate(cases) {
+        const list = Array.isArray(cases) ? cases : PuenteDB.cases.getAll();
+        try {
+          if (typeof window !== 'undefined' && window.state) window.state.cases = list;
+        } catch (e) {}
+        try {
+          if (PuenteDB.realtime) PuenteDB.realtime.notifyListeners('cases_updated', list);
+        } catch (e) {}
+        try {
+          if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('puente:cases-updated', { detail: list }));
+          }
+        } catch (e) {}
+      },
+
       async syncCases() {
         try {
           let serverCases = null;
@@ -1205,9 +1222,14 @@ const PuenteDB = {
                 localCases.unshift(sc);
                 changed = true;
               } else {
-                // Actualizar si cambió estado o asignación en servidor
-                if (localCases[localIdx].status !== sc.status || localCases[localIdx].assignedTo !== sc.assignedTo) {
-                  localCases[localIdx] = { ...localCases[localIdx], ...sc };
+                // Actualizar si cambió estado, asignación, descripción o fecha en servidor
+                const lc = localCases[localIdx];
+                if (lc.status !== sc.status ||
+                    lc.assignedTo !== sc.assignedTo ||
+                    lc.assignedToEmail !== sc.assignedToEmail ||
+                    lc.description !== sc.description ||
+                    lc.date !== sc.date) {
+                  localCases[localIdx] = { ...lc, ...sc };
                   changed = true;
                 }
               }
@@ -1215,15 +1237,7 @@ const PuenteDB = {
 
             if (changed) {
               saveToStorage(STORAGE_KEYS.CASES, localCases);
-              if (typeof window !== 'undefined' && window.state) {
-                window.state.cases = localCases;
-                if (typeof window.renderProfessionalTable === 'function') {
-                  window.renderProfessionalTable();
-                }
-                if (typeof window.renderCitizenTable === 'function') {
-                  window.renderCitizenTable();
-                }
-              }
+              this.notifyCaseUpdate(localCases);
             }
           }
         } catch (err) {}
@@ -1401,6 +1415,61 @@ const PuenteDB = {
             this.socket.on('webrtc_offer', (data) => this.notifyListeners('webrtc_offer', data));
             this.socket.on('webrtc_answer', (data) => this.notifyListeners('webrtc_answer', data));
             this.socket.on('webrtc_ice_candidate', (data) => this.notifyListeners('webrtc_ice_candidate', data));
+
+            // Casos en tiempo real: creación, actualización y asignación desde
+            // cualquier otro dispositivo conectado a la red ODS 16.
+            const upsertCaseFromServer = (record) => {
+              if (!record || !record.id) return null;
+              const existing = PuenteDB.cases.getById(record.id);
+              return existing
+                ? PuenteDB.cases.update(record.id, record, { remote: false })
+                : PuenteDB.cases.insert(record, { remote: false });
+            };
+
+            const handleCaseCreated = (payload) => {
+              const record = payload && payload.caseRecord ? payload.caseRecord : payload;
+              const saved = upsertCaseFromServer(record);
+              if (!saved) return;
+              console.log('[PuenteDB Realtime] Caso nuevo recibido:', saved.id);
+              this.notifyListeners('case_created', saved);
+              this.notifyListeners('cases_updated', PuenteDB.cases.getAll());
+            };
+
+            const handleCaseUpdated = (payload) => {
+              const record = payload && payload.caseRecord ? payload.caseRecord : payload;
+              const saved = upsertCaseFromServer(record);
+              if (!saved) return;
+              this.notifyListeners('case_updated', saved);
+              this.notifyListeners('cases_updated', PuenteDB.cases.getAll());
+            };
+
+            const handleCaseClaimed = (payload) => {
+              if (!payload) return;
+              const caseId = payload.caseId || payload.id || (payload.caseRecord && payload.caseRecord.id);
+              if (!caseId) return;
+
+              if (payload.caseRecord) {
+                upsertCaseFromServer(payload.caseRecord);
+              } else {
+                const updates = {};
+                if (payload.profName) {
+                  updates.assignedTo = payload.profName;
+                  updates.profesional_asignado = payload.profName;
+                }
+                if (payload.profEmail) updates.assignedToEmail = payload.profEmail;
+                const existing = PuenteDB.cases.getById(caseId);
+                if (existing && existing.status === 'Pendiente') updates.status = 'En curso';
+                PuenteDB.cases.update(caseId, updates, { remote: false });
+              }
+
+              this.notifyListeners('case_claimed', payload);
+              this.notifyListeners('cases_updated', PuenteDB.cases.getAll());
+            };
+
+            this.socket.on('new_case', handleCaseCreated);
+            this.socket.on('case_created', handleCaseCreated);
+            this.socket.on('case_updated', handleCaseUpdated);
+            this.socket.on('case_claimed', handleCaseClaimed);
 
           } catch (err) {
             console.warn('[PuenteDB Realtime] Error inicializando Socket.io:', err);
@@ -1685,6 +1754,11 @@ const PuenteDB = {
           return null;
         }
       }
+    },
+
+    // Descarga la lista completa de casos desde GET /api/casos y notifica a la UI.
+    async syncCases() {
+      return this.polling.syncCases();
     },
 
     getStats() {

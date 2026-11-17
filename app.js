@@ -474,6 +474,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     renderConditionalViews();
+    if (role) refreshCasesFromServer();
     if (typeof window.updateSystemRealtimeDates === "function") window.updateSystemRealtimeDates();
   };
 
@@ -491,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (action === 'cases') {
       document.getElementById('cNavCases')?.classList.add('active');
       if (typeof window.ocultarPanelAgente === 'function') window.ocultarPanelAgente();
-      renderCitizenTable();
+      refreshCasesFromServer();
       showToast('Mostrando tus casos registrados.', 'info');
     } else if (action === 'report') {
       document.getElementById('cNavReport')?.classList.add('active');
@@ -547,10 +548,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (action === 'cases') {
       document.getElementById('pNavCases')?.classList.add('active');
       window.switchProfViewMode('assigned');
+      refreshCasesFromServer();
       showToast('Mostrando casos asignados.', 'info');
     } else if (action === 'unassigned') {
       document.getElementById('pNavUnassigned')?.classList.add('active');
       window.switchProfViewMode('unassigned');
+      refreshCasesFromServer();
       showToast('Mostrando casos sin asignar en la red ODS 16.', 'info');
     } else if (action === 'agenda') {
       document.getElementById('pNavAgenda')?.classList.add('active');
@@ -573,7 +576,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  window.submitModalCase = () => {
+  // Envía un caso al backend compartido (server.js) para que cualquier
+  // dispositivo lo reciba por GET /api/casos y por Socket.IO en tiempo real.
+  async function persistCaseOnServer(caseRecord) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 12000) : null;
+    try {
+      const endpoint = (window.PUENTE_CONFIG && typeof window.PUENTE_CONFIG.getApiUrl === 'function')
+        ? window.PUENTE_CONFIG.getApiUrl('api/casos')
+        : '/api/casos';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(caseRecord),
+        cache: 'no-store',
+        signal: controller ? controller.signal : undefined
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json().catch(() => null);
+      if (json && json.success && json.data) return json.data;
+      throw new Error((json && json.message) || 'Respuesta inválida del servidor');
+    } catch (err) {
+      console.warn('[Casos] No se pudo sincronizar el caso con el servidor:', err.message || err);
+      // Respaldo heredado: API PHP (XAMPP) cuando el backend Node no responde.
+      try {
+        if (window.PuenteDB?.mysql && typeof window.PuenteDB.mysql.createCase === 'function') {
+          const legacy = await window.PuenteDB.mysql.createCase(caseRecord);
+          if (legacy && legacy.success && legacy.data) return legacy.data;
+        }
+      } catch (e) {}
+      return null;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  window.submitModalCase = async () => {
     const cat = document.getElementById('modalCaseCategory')?.value || 'Problema laboral';
     const desc = document.getElementById('modalCaseDesc')?.value || 'Caso reportado desde el menú lateral';
     const id = `CAS-00${Math.floor(100 + Math.random() * 900)}`;
@@ -596,8 +634,9 @@ document.addEventListener('DOMContentLoaded', () => {
       checklist: institutionsData[getInstitutionByCategory(cat)]?.checklist || []
     };
 
+    // Guardado local inmediato (respaldo offline) + envío al backend compartido.
     if (window.PuenteDB) {
-      window.PuenteDB.cases.insert(newCaseRecord);
+      window.PuenteDB.cases.insert(newCaseRecord, { remote: false });
       state.cases = window.PuenteDB.cases.getAll();
     } else {
       state.cases.unshift(newCaseRecord);
@@ -606,7 +645,19 @@ document.addEventListener('DOMContentLoaded', () => {
     closeModal();
     renderCitizenTable();
     renderProfessionalTable();
-    showToast(`¡Caso ${id} creado y guardado en la Base de Datos con éxito!`, 'success');
+
+    const saved = await persistCaseOnServer(newCaseRecord);
+    if (saved) {
+      if (window.PuenteDB) {
+        window.PuenteDB.cases.insert(saved, { remote: false });
+        state.cases = window.PuenteDB.cases.getAll();
+      }
+      renderCitizenTable();
+      renderProfessionalTable();
+      showToast(`¡Caso ${saved.id || id} creado y sincronizado en la red ODS 16!`, 'success');
+    } else {
+      showToast(`Caso ${id} guardado localmente. Se sincronizará con la red cuando vuelva la conexión.`, 'warning');
+    }
   };
 
   // ==========================================================================
@@ -2304,9 +2355,35 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
     });
+
+    // Casos creados o actualizados en otros dispositivos (Socket.IO / polling)
+    const handleCasesUpdated = () => {
+      state.cases = window.PuenteDB?.cases ? window.PuenteDB.cases.getAll() : state.cases;
+      if (!state.currentUser) return;
+      renderCitizenTable();
+      renderProfessionalTable();
+      if (typeof window.renderProfessionalAgenda === 'function') window.renderProfessionalAgenda();
+    };
+
+    window.PuenteDB.realtime.on('cases_updated', handleCasesUpdated);
+    window.PuenteDB.realtime.on('case_updated', handleCasesUpdated);
+    window.PuenteDB.realtime.on('case_claimed', handleCasesUpdated);
+
+    window.PuenteDB.realtime.on('case_created', (newCase) => {
+      if (!newCase || !newCase.id || !state.currentUser) return;
+      const myEmail = (state.currentUser.email || '').toLowerCase().trim();
+      const creatorEmail = (newCase.citizenEmail || '').toLowerCase().trim();
+      const isOwnCase = !!myEmail && creatorEmail === myEmail;
+      // Solo los profesionales reciben el aviso de nuevos casos de otros ciudadanos.
+      if (state.currentUser.role === 'professional' && !isOwnCase) {
+        showToast(`Nuevo caso #${newCase.id} recibido en la red ODS 16 (${newCase.type || 'Orientación'}).`, 'info');
+      }
+    });
+
+    // Respaldo para actualizaciones detectadas por polling desde db.js
+    window.addEventListener('puente:cases-updated', handleCasesUpdated);
   }
 
-  // Evento de escritura con debounce en el input de Messenger
   let typingDebounceTimer = null;
   document.getElementById('messengerTextInput')?.addEventListener('input', () => {
     if (window.PuenteDB?.realtime && state.activeMessengerCaseId) {
@@ -2592,6 +2669,24 @@ document.addEventListener('DOMContentLoaded', () => {
         </td>
     `).join('');
   }
+
+  // Expuestos para que PuenteDB (db.js) y el motor de polling puedan refrescar
+  // las tablas cuando llegan casos desde el backend compartido.
+  window.renderCitizenTable = renderCitizenTable;
+  window.renderProfessionalTable = renderProfessionalTable;
+
+  // Descarga la lista completa de casos desde GET /api/casos y repinta la UI.
+  async function refreshCasesFromServer() {
+    if (window.PuenteDB) {
+      if (typeof window.PuenteDB.syncCases === 'function') {
+        try { await window.PuenteDB.syncCases(); } catch (e) {}
+      }
+      state.cases = window.PuenteDB.cases.getAll();
+    }
+    renderCitizenTable();
+    renderProfessionalTable();
+  }
+  window.refreshCasesFromServer = refreshCasesFromServer;
 
   window.filterProfCases = (filterType) => {
     state.profFilter = filterType;
@@ -3222,7 +3317,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `;
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const newCaseId = `CAS-00${Math.floor(100 + Math.random() * 900)}`;
       const targetInst = getInstitutionByCategory(state.wizard.category);
       const instInfo = institutionsData[targetInst] || institutionsData['Inspección del Trabajo'];
@@ -3245,11 +3340,18 @@ document.addEventListener('DOMContentLoaded', () => {
         checklist: instInfo.checklist
       };
 
+      // Guardado local inmediato (respaldo offline) + envío al backend compartido.
       if (window.PuenteDB) {
-        window.PuenteDB.cases.insert(newCaseRecord);
+        window.PuenteDB.cases.insert(newCaseRecord, { remote: false });
         state.cases = window.PuenteDB.cases.getAll();
       } else {
         state.cases.unshift(newCaseRecord);
+      }
+
+      const savedCase = await persistCaseOnServer(newCaseRecord);
+      if (savedCase && window.PuenteDB) {
+        window.PuenteDB.cases.insert(savedCase, { remote: false });
+        state.cases = window.PuenteDB.cases.getAll();
       }
 
       renderCitizenTable();
@@ -4070,6 +4172,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 11. INICIALIZACIÓN
   // ==========================================================================
   renderConditionalViews();
+  refreshCasesFromServer();
   renderSubCategoryChips('Problema laboral');
   setWizardStep(1);
   renderScene(1);
