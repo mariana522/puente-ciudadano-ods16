@@ -102,6 +102,72 @@ class Fragmento(db.Model):
         return f"<Fragmento id={self.id} doc_id={self.documento_id} orden={self.orden} len={len(self.texto)}>"
 
 
+class Caso(db.Model):
+    """
+    Tabla: casos
+    Expedientes ciudadanos compartidos entre todos los dispositivos.
+    Se usa cuando la aplicación web es servida por Flask (Render), de modo que
+    el panel ciudadano y el panel profesional consulten la misma fuente de datos.
+    """
+    __tablename__ = 'casos'
+
+    id = db.Column(db.String(32), primary_key=True, doc="Código público del expediente, ej. CAS-00138")
+    citizen = db.Column(db.String(200), nullable=False, default='Ciudadano Anónimo')
+    citizen_email = db.Column(db.String(200), nullable=True)
+    type = db.Column(db.String(200), nullable=True)
+    sub_type = db.Column(db.String(200), nullable=True)
+    description = db.Column(db.Text, nullable=True)
+    status = db.Column(db.String(50), nullable=False, default='Pendiente')
+    assigned_to = db.Column(db.String(200), nullable=True, default='Por asignar')
+    assigned_to_email = db.Column(db.String(200), nullable=True)
+    date = db.Column(db.String(20), nullable=True)
+    institution = db.Column(db.String(200), nullable=True)
+    inst_address = db.Column(db.String(300), nullable=True)
+    inst_phone = db.Column(db.String(200), nullable=True)
+    inst_hours = db.Column(db.String(200), nullable=True)
+    checklist = db.Column(db.JSON, nullable=True)
+    observations = db.Column(db.Text, nullable=True)
+    room_url = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    def to_dict(self):
+        """Serializa el expediente con las claves camelCase que usa el frontend."""
+        return {
+            'id': self.id,
+            'citizen': self.citizen or '',
+            'citizenEmail': self.citizen_email or '',
+            'type': self.type or '',
+            'subType': self.sub_type or '',
+            'description': self.description or '',
+            'status': self.status or 'Pendiente',
+            'assignedTo': self.assigned_to or 'Por asignar',
+            'assignedToEmail': self.assigned_to_email or '',
+            'date': self.date or '',
+            'institution': self.institution or '',
+            'instAddress': self.inst_address or '',
+            'instPhone': self.inst_phone or '',
+            'instHours': self.inst_hours or '',
+            'checklist': self.checklist or [],
+            'observations': self.observations or '',
+            'roomUrl': self.room_url or '',
+            'createdAt': self.created_at.isoformat() if self.created_at else None,
+            'updatedAt': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+    def __repr__(self):
+        return f"<Caso id={self.id} status='{self.status}' assignedTo='{self.assigned_to}'>"
+
+
 class ConsultaAgente(db.Model):
     """
     Tabla: consultas_agente

@@ -8,7 +8,9 @@ Agente de Orientación Ciudadana con Gemini y Generador de Derecho de Petición 
 
 import os
 import io
+import random
 import logging
+from datetime import datetime, timezone
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -17,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Importar modelos y módulos del sistema RAG
-from models import db, DocumentoFuente, Fragmento, ConsultaAgente
+from models import db, DocumentoFuente, Fragmento, ConsultaAgente, Caso
 from recuperacion import Indice
 from ingesta import ingestar, ingerir
 from agente import orientar, LINEAS_EMERGENCIA_OFICIALES
@@ -81,6 +83,168 @@ def create_app(config_override=None):
     # Configuración CORS (Render, Vercel y desarrollo local).
     # Flask-CORS responde también los preflight OPTIONS automáticamente.
     CORS(app, resources={r"/*": {"origins": "*"}})
+
+    # --------------------------------------------------------------------------
+    # API DE CASOS COMPARTIDOS (MISMAS RUTAS QUE server.js)
+    # Permite que la UI servida por Flask en Render comparta los expedientes
+    # entre ciudadanos y profesionales de distintos dispositivos.
+    # --------------------------------------------------------------------------
+    def _texto(valor):
+        return "" if valor is None else str(valor).strip()
+
+    def _esta_sin_asignar(caso):
+        asignado = _texto(caso.assigned_to or "").lower()
+        return asignado in ("", "por asignar", "sin asignar", "null", "undefined")
+
+    def _limpiar_titulo(nombre):
+        nombre = _texto(nombre).lower()
+        for prefijo in ("dra. ", "dr. ", "dra.", "dr."):
+            if nombre.startswith(prefijo):
+                return nombre[len(prefijo):].strip()
+        return nombre
+
+    @app.route("/health", methods=["GET"])
+    def healthcheck():
+        """Healthcheck para Render y para el diagnóstico del frontend."""
+        return jsonify({
+            "status": "ok",
+            "service": "Puente Ciudadano ODS 16 - Flask (UI + API de casos + RAG)",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "casos": Caso.query.count()
+        })
+
+    @app.route("/api/casos", methods=["GET", "POST", "PUT", "OPTIONS"])
+    def api_casos():
+        if request.method == "OPTIONS":
+            return jsonify({"success": True}), 200
+
+        # ---------------- GET: consultar expedientes ----------------
+        if request.method == "GET":
+            codigo = _texto(request.args.get("codigo") or request.args.get("id"))
+            if codigo:
+                caso = db.session.get(Caso, codigo)
+                if not caso:
+                    return jsonify({"success": False, "message": "Expediente no encontrado."}), 404
+                return jsonify({"success": True, "data": caso.to_dict()})
+
+            casos = Caso.query.order_by(Caso.created_at.desc()).all()
+
+            sin_asignar = (request.args.get("unassigned") or "").lower() in ("true", "1")
+            rol = _texto(request.args.get("user_role") or request.headers.get("X-User-Role") or "citizen").lower()
+            email = _texto(request.args.get("user_email") or request.headers.get("X-User-Email")).lower()
+            nombre = _texto(request.args.get("user_name") or request.headers.get("X-User-Name")).lower()
+
+            if sin_asignar:
+                casos = [c for c in casos if _esta_sin_asignar(c)]
+            elif rol == "professional" and (email or nombre):
+                nombre_limpio = _limpiar_titulo(nombre)
+                casos = [
+                    c for c in casos
+                    if (c.assigned_to_email and c.assigned_to_email.lower() == email)
+                    or (_limpiar_titulo(c.assigned_to) == nombre_limpio and nombre_limpio != "")
+                ]
+            elif rol == "citizen" and (email or nombre):
+                casos = [
+                    c for c in casos
+                    if (c.citizen_email and c.citizen_email.lower() == email)
+                    or (_texto(c.citizen).lower() == nombre and nombre != "")
+                ]
+
+            return jsonify({
+                "success": True,
+                "count": len(casos),
+                "data": [c.to_dict() for c in casos]
+            })
+
+        # ---------------- POST / PUT: crear, asignar o actualizar ----------------
+        data = request.get_json(silent=True) or {}
+        accion = _texto(request.args.get("action") or data.get("action")).lower()
+
+        if accion == "claim":
+            case_id = _texto(data.get("caseId") or data.get("id") or request.args.get("caseId") or request.args.get("id"))
+            caso = db.session.get(Caso, case_id) if case_id else None
+            if not caso:
+                return jsonify({"success": False, "message": "Expediente no encontrado para asignación."}), 404
+
+            prof_name = _texto(data.get("profName") or data.get("assignedTo")) or "Dra. Elena Gómez"
+            prof_email = _texto(data.get("profEmail") or data.get("assignedToEmail"))
+            caso.assigned_to = prof_name
+            if prof_email:
+                caso.assigned_to_email = prof_email
+            if (caso.status or "") == "Pendiente":
+                caso.status = "En curso"
+            caso.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return jsonify({
+                "success": True,
+                "message": f"Caso {caso.id} asignado exitosamente a {prof_name}",
+                "data": caso.to_dict()
+            })
+
+        if accion == "update" or request.method == "PUT":
+            case_id = _texto(data.get("id") or data.get("codigo") or request.args.get("id"))
+            caso = db.session.get(Caso, case_id) if case_id else None
+            if not caso:
+                return jsonify({"success": False, "message": "Expediente no encontrado para actualizar."}), 404
+
+            if data.get("status") or data.get("estado"):
+                caso.status = _texto(data.get("status") or data.get("estado"))
+            if "observations" in data:
+                caso.observations = _texto(data.get("observations"))
+            if data.get("roomUrl") or data.get("sala_url"):
+                caso.room_url = _texto(data.get("roomUrl") or data.get("sala_url"))
+            caso.updated_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return jsonify({
+                "success": True,
+                "message": f"Expediente {caso.id} actualizado exitosamente.",
+                "data": caso.to_dict()
+            })
+
+        # Crear o actualizar (upsert) un expediente completo
+        case_id = _texto(data.get("id") or data.get("codigo"))
+        if not case_id:
+            case_id = f"CAS-00{random.randint(100, 999)}"
+        caso = db.session.get(Caso, case_id)
+
+        if caso is None:
+            caso = Caso(id=case_id)
+            caso.citizen = _texto(data.get("citizen")) or "Ciudadano Anónimo"
+            caso.type = _texto(data.get("type")) or "Orientación Jurídica"
+            caso.status = _texto(data.get("status")) or "Pendiente"
+            caso.assigned_to = _texto(data.get("assignedTo")) or "Por asignar"
+            caso.date = _texto(data.get("date")) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            caso.institution = _texto(data.get("institution")) or "Consultorio Jurídico"
+            caso.created_at = datetime.now(timezone.utc)
+            db.session.add(caso)
+
+        caso.citizen = _texto(data.get("citizen")) or caso.citizen or "Ciudadano Anónimo"
+        caso.citizen_email = _texto(data.get("citizenEmail"))
+        caso.type = _texto(data.get("type")) or caso.type or "Orientación Jurídica"
+        caso.sub_type = _texto(data.get("subType") or data.get("subtipo")) or caso.sub_type or ""
+        caso.description = _texto(data.get("description") or data.get("descripcion"))
+        caso.status = _texto(data.get("status")) or caso.status or "Pendiente"
+        caso.assigned_to = _texto(data.get("assignedTo")) or caso.assigned_to or "Por asignar"
+        caso.assigned_to_email = _texto(data.get("assignedToEmail"))
+        caso.date = _texto(data.get("date")) or caso.date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        caso.institution = _texto(data.get("institution")) or caso.institution or "Consultorio Jurídico"
+        caso.inst_address = _texto(data.get("instAddress"))
+        caso.inst_phone = _texto(data.get("instPhone"))
+        caso.inst_hours = _texto(data.get("instHours"))
+        if isinstance(data.get("checklist"), list):
+            caso.checklist = data.get("checklist")
+        elif caso.checklist is None:
+            caso.checklist = []
+        caso.observations = _texto(data.get("observations"))
+        caso.updated_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+        logger.info("[Casos] Expediente %s registrado/actualizado en la base compartida.", caso.id)
+        return jsonify({
+            "success": True,
+            "message": "Expediente registrado exitosamente con estado inicial Pendiente.",
+            "data": caso.to_dict()
+        }), 201
 
     # --------------------------------------------------------------------------
     # RUTAS DE SERVIDO WEB ESTÁTICO (UI FRONTEND)

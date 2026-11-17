@@ -2723,10 +2723,13 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('[Diagnóstico Casos]', info);
 
     if (typeof showToast === 'function') {
+      const transporte = info.socketConectado
+        ? 'Socket: conectado'
+        : 'Socket: no disponible (sincronización por polling cada ~4 s)';
       showToast(
         server.ok
-          ? `Backend OK (${base}) · ${server.count} casos en el servidor · Socket: ${info.socketConectado ? 'conectado' : 'desconectado'}`
-          : `No se pudo leer ${base}/api/casos. Revisa que estés en la URL de Render (Node), no en Vercel.`,
+          ? `Backend OK (${base}) · ${server.count} casos en el servidor · ${transporte}`
+          : `No se pudo leer ${base}/api/casos (HTTP ${server.status || 0}). Revisa que el backend desplegado en Render ya tenga las rutas de casos.`,
         server.ok ? 'info' : 'warning'
       );
     }

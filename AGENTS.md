@@ -14,6 +14,7 @@ Spanish-language academic platform for ODS 16 (Colombian legal/social orientatio
 - **Flask RAG — `app.py`, port 5000 (`python app.py`)**
   Serves the same UI plus `/api/rag/*`: `estado`, `buscar`, `ingerir`, `orientar`, `peticion/pdf`, `consultas`.
   Uses `puente_rag.db` (SQLite) unless `DATABASE_URL` / MySQL is configured.
+  **En Render el entry point público es este Flask**, así que también expone `/health` y `/api/casos` (GET/POST/PUT, `action=claim`, `action=update`) sobre la tabla SQLAlchemy `casos` (`models.py`). Los expedientes viven en `puente_rag.db`/`DATABASE_URL`; sin base persistente se pierden al redesplegar (filesystem efímero de Render free). No hay Socket.IO: el frontend sincroniza por polling (`db.js`, ~4 s).
 - **PHP API — `backend/` and `api/`**
   XAMPP/MySQL alternative consumed by `db.js`; the frontend silently falls back to `LocalStorage`/`PuenteDB` when PHP is unavailable.
 

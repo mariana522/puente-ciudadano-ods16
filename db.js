@@ -1679,6 +1679,20 @@ const PuenteDB = {
       },
 
       async updateCaseStatus(caseId, status, obs = '') {
+        // El servidor compartido (Node o Flask en Render) es la fuente principal.
+        try {
+          const endpoint = (typeof window !== 'undefined' && window.PUENTE_CONFIG)
+            ? window.PUENTE_CONFIG.getApiUrl('api/casos?action=update')
+            : '/api/casos?action=update';
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: caseId, status, observations: obs, action: 'update' })
+          });
+          if (res.ok) return await res.json();
+        } catch (e) {}
+
+        // Respaldo: API PHP de XAMPP.
         try {
           const res = await this.request('casos.php?action=update', {
             method: 'POST',
