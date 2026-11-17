@@ -2688,6 +2688,51 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   window.refreshCasesFromServer = refreshCasesFromServer;
 
+  // Diagnóstico rápido para verificar en producción si el navegador está
+  // conectado al backend correcto y si el servidor comparte los casos.
+  // Uso: abrir la consola (F12) y ejecutar `await diagnosticoCasos()`.
+  window.diagnosticoCasos = async () => {
+    const base = (window.PUENTE_CONFIG && typeof window.PUENTE_CONFIG.getServerUrl === 'function')
+      ? window.PUENTE_CONFIG.getServerUrl()
+      : window.location.origin;
+    const user = state.currentUser;
+    let server = { ok: false, count: 0, ids: [] };
+    try {
+      const res = await fetch(base + '/api/casos?_t=' + Date.now(), { cache: 'no-store' });
+      const json = await res.json().catch(() => null);
+      server = {
+        ok: res.ok && !!json && json.success === true,
+        status: res.status,
+        count: (json && Array.isArray(json.data)) ? json.data.length : 0,
+        ids: ((json && json.data) || []).map(c => c.id).slice(0, 12)
+      };
+    } catch (err) {
+      server = { ok: false, status: 0, count: 0, ids: [], error: err.message || String(err) };
+    }
+
+    const info = {
+      pagina: window.location.href,
+      backendUrl: base,
+      usuario: user ? { nombre: user.name, rol: user.role, email: user.email } : null,
+      socketConectado: !!(window.PuenteDB?.realtime?.socket?.connected),
+      socketId: window.PuenteDB?.realtime?.socket?.id || null,
+      casosLocales: window.PuenteDB?.cases ? window.PuenteDB.cases.getAll().length : 0,
+      vistaProfesional: state.profViewMode,
+      servidor: server
+    };
+    console.log('[Diagnóstico Casos]', info);
+
+    if (typeof showToast === 'function') {
+      showToast(
+        server.ok
+          ? `Backend OK (${base}) · ${server.count} casos en el servidor · Socket: ${info.socketConectado ? 'conectado' : 'desconectado'}`
+          : `No se pudo leer ${base}/api/casos. Revisa que estés en la URL de Render (Node), no en Vercel.`,
+        server.ok ? 'info' : 'warning'
+      );
+    }
+    return info;
+  };
+
   window.filterProfCases = (filterType) => {
     state.profFilter = filterType;
 
@@ -2960,6 +3005,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.PuenteDB.session.set(mysqlRes.user);
             closeModal();
             renderConditionalViews();
+            refreshCasesFromServer();
             showToast(`¡Bienvenido(a), ${mysqlRes.user.name}! Sesión iniciada con éxito.`, 'success');
             return;
           }
@@ -2974,6 +3020,7 @@ document.addEventListener('DOMContentLoaded', () => {
           window.PuenteDB.session.set(localUser);
           closeModal();
           renderConditionalViews();
+          refreshCasesFromServer();
           showToast(`¡Bienvenido(a), ${localUser.name}! Sesión iniciada con éxito.`, 'success');
           return;
         }
