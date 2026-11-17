@@ -8,8 +8,12 @@ Agente de Orientación Ciudadana con Gemini y Generador de Derecho de Petición 
 
 import os
 import io
+import re
+import base64
 import random
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
@@ -19,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Importar modelos y módulos del sistema RAG
-from models import db, DocumentoFuente, Fragmento, ConsultaAgente, Caso
+from models import db, DocumentoFuente, Fragmento, ConsultaAgente, Caso, MensajeChat
 from recuperacion import Indice
 from ingesta import ingestar, ingerir
 from agente import orientar, LINEAS_EMERGENCIA_OFICIALES
@@ -28,6 +32,80 @@ from generador_peticion import generar_derecho_peticion_pdf
 # Configurar logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+# ==============================================================================
+# ADJUNTOS DEL CHAT — almacén acotado en memoria (Render tiene disco efímero)
+# ------------------------------------------------------------------------------
+# Los archivos se reciben por /api/upload y se sirven desde /api/attachments/<id>.
+# Se limita el tamaño por archivo, el total en memoria y el tiempo de vida, igual
+# que hace server.js en el backend Node.
+# ==============================================================================
+MAX_ADJUNTO_BYTES = 15 * 1024 * 1024          # 15 MB por archivo
+MAX_CUERPO_BYTES = 20 * 1024 * 1024           # 20 MB por petición (multipart/JSON)
+MAX_DATA_URL_BYTES = 512 * 1024               # base64 inline solo para vistas previas
+ADJUNTOS_MAX_TOTAL_BYTES = 64 * 1024 * 1024   # 64 MB en memoria
+ADJUNTOS_TTL_SEGUNDOS = 6 * 60 * 60           # 6 horas
+
+_ADJUNTOS = {}          # id -> {buffer, mimetype, originalname, size, creado}
+_ADJUNTOS_BYTES = 0
+_ADJUNTOS_SEQ = 0
+_ADJUNTOS_LOCK = threading.Lock()
+
+_EXTENSIONES_PERMITIDAS = re.compile(
+    r"\.(pdf|doc|docx|xls|xlsx|png|jpg|jpeg|gif|webp|txt|csv|zip)$", re.IGNORECASE
+)
+
+
+def _limpiar_adjuntos():
+    """Elimina adjuntos vencidos para no crecer sin control en memoria."""
+    global _ADJUNTOS_BYTES
+    ahora = time.time()
+    for adjunto_id, item in list(_ADJUNTOS.items()):
+        if ahora - item["creado"] > ADJUNTOS_TTL_SEGUNDOS:
+            _ADJUNTOS.pop(adjunto_id, None)
+            _ADJUNTOS_BYTES -= item["size"]
+
+
+def _guardar_adjunto(nombre, mimetype, datos):
+    """Guarda el archivo en memoria y devuelve el id público."""
+    global _ADJUNTOS_BYTES, _ADJUNTOS_SEQ
+    with _ADJUNTOS_LOCK:
+        _limpiar_adjuntos()
+        while _ADJUNTOS_BYTES + len(datos) > ADJUNTOS_MAX_TOTAL_BYTES and _ADJUNTOS:
+            adjunto_id, item = next(iter(_ADJUNTOS.items()))
+            _ADJUNTOS.pop(adjunto_id, None)
+            _ADJUNTOS_BYTES -= item["size"]
+
+        _ADJUNTOS_SEQ += 1
+        adjunto_id = "att_%s_%s" % (int(time.time()), _ADJUNTOS_SEQ)
+        _ADJUNTOS[adjunto_id] = {
+            "buffer": datos,
+            "mimetype": mimetype or "application/octet-stream",
+            "originalname": nombre or "adjunto",
+            "size": len(datos),
+            "creado": time.time()
+        }
+        _ADJUNTOS_BYTES += len(datos)
+        return adjunto_id
+
+
+def _obtener_adjunto(adjunto_id):
+    """Devuelve el adjunto vigente o None si no existe/venció."""
+    global _ADJUNTOS_BYTES
+    with _ADJUNTOS_LOCK:
+        item = _ADJUNTOS.get(adjunto_id)
+        if not item:
+            return None
+        if time.time() - item["creado"] > ADJUNTOS_TTL_SEGUNDOS:
+            _ADJUNTOS.pop(adjunto_id, None)
+            _ADJUNTOS_BYTES -= item["size"]
+            return None
+        return item
+
+
+def _normalizar_caso(case_id):
+    """Mismo normalizador que server.js: CAS-00138 -> cas00138."""
+    return re.sub(r"[^a-z0-9]", "", str(case_id or "").lower()) or "cas00138"
 
 
 def create_app(config_override=None):
@@ -65,6 +143,8 @@ def create_app(config_override=None):
     app.config["SQLALCHEMY_DATABASE_URI"] = db_uri or f"sqlite:///{db_path}"
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     app.config["JSON_AS_ASCII"] = False
+    # Permite subir adjuntos de hasta 15 MB por multipart/JSON.
+    app.config["MAX_CONTENT_LENGTH"] = MAX_CUERPO_BYTES
 
     if config_override:
         app.config.update(config_override)
@@ -245,6 +325,155 @@ def create_app(config_override=None):
             "message": "Expediente registrado exitosamente con estado inicial Pendiente.",
             "data": caso.to_dict()
         }), 201
+
+    # --------------------------------------------------------------------------
+    # API DE MENSAJES Y ADJUNTOS DEL CHAT (MISMAS RUTAS QUE server.js)
+    # Permite enviar PDF/imágenes desde el chat cuando la UI la sirve Flask.
+    # --------------------------------------------------------------------------
+    @app.route("/api/upload", methods=["POST", "OPTIONS"])
+    def api_upload():
+        if request.method == "OPTIONS":
+            return jsonify({"success": True}), 200
+
+        archivo = (
+            request.files.get("file")
+            or request.files.get("archivo")
+            or request.files.get("adjunto")
+        )
+        if archivo is None:
+            return jsonify({
+                "success": False,
+                "error": "archivo_requerido",
+                "message": "No se recibió ningún archivo. Envía el campo \"file\" en el FormData."
+            }), 400
+
+        if not _EXTENSIONES_PERMITIDAS.search(archivo.filename or ""):
+            return jsonify({
+                "success": False,
+                "error": "tipo_no_permitido",
+                "message": "Tipo de archivo no permitido."
+            }), 415
+
+        datos = archivo.read()
+        if len(datos) > MAX_ADJUNTO_BYTES:
+            return jsonify({
+                "success": False,
+                "error": "archivo_demasiado_grande",
+                "message": "El archivo supera el límite de 15 MB."
+            }), 413
+        if not datos:
+            return jsonify({
+                "success": False,
+                "error": "archivo_vacio",
+                "message": "El archivo está vacío."
+            }), 400
+
+        mimetype = archivo.mimetype or "application/octet-stream"
+        adjunto_id = _guardar_adjunto(archivo.filename, mimetype, datos)
+        data_url = None
+        if len(datos) <= MAX_DATA_URL_BYTES:
+            data_url = "data:%s;base64,%s" % (
+                mimetype,
+                base64.b64encode(datos).decode("ascii")
+            )
+
+        logger.info("[Adjuntos] %s (%s KB) guardado como %s",
+                    archivo.filename, max(1, len(datos) // 1024), adjunto_id)
+
+        return jsonify({
+            "success": True,
+            "id": adjunto_id,
+            "filename": adjunto_id,
+            "originalname": archivo.filename,
+            "mimetype": mimetype,
+            "size": len(datos),
+            "storage": "memory",
+            "url": "/api/attachments/" + adjunto_id,
+            "dataUrl": data_url
+        }), 200
+
+    @app.route("/api/attachments/<adjunto_id>", methods=["GET"])
+    def api_attachment(adjunto_id):
+        item = _obtener_adjunto(adjunto_id)
+        if not item:
+            return jsonify({
+                "success": False,
+                "error": "not_found",
+                "message": "El adjunto no existe o expiró."
+            }), 404
+        return send_file(
+            io.BytesIO(item["buffer"]),
+            mimetype=item["mimetype"],
+            download_name=item["originalname"],
+            as_attachment=False,
+            max_age=0
+        )
+
+    @app.route("/api/mensajes", methods=["GET", "POST", "OPTIONS"])
+    def api_mensajes():
+        if request.method == "OPTIONS":
+            return jsonify({"success": True}), 200
+
+        if request.method == "GET":
+            case_id = _texto(
+                request.args.get("caseId")
+                or request.args.get("caso_codigo")
+                or request.args.get("id")
+            ) or "CAS-00138"
+            registros = MensajeChat.query.filter_by(
+                case_key=_normalizar_caso(case_id)
+            ).order_by(MensajeChat.created_at.asc()).all()
+            return jsonify({
+                "success": True,
+                "caseId": case_id,
+                "count": len(registros),
+                "data": [m.to_dict() for m in registros]
+            })
+
+        data = request.get_json(silent=True) or {}
+        case_id = _texto(
+            data.get("caseId") or data.get("caso_codigo") or request.args.get("caseId")
+        ) or "CAS-00138"
+        texto = _texto(data.get("text") or data.get("mensaje"))
+        adjunto = data.get("attachment") if isinstance(data.get("attachment"), dict) else None
+        if not texto and not adjunto:
+            return jsonify({
+                "success": False,
+                "message": "El mensaje debe tener texto o un archivo adjunto."
+            }), 400
+
+        mensaje_id = _texto(data.get("id")) or "MSG-%s-%s" % (
+            int(time.time() * 1000), random.randint(100, 999)
+        )
+        registro = db.session.get(MensajeChat, mensaje_id)
+        if registro is None:
+            registro = MensajeChat(id=mensaje_id, created_at=datetime.now(timezone.utc))
+            db.session.add(registro)
+
+        registro.case_id = case_id
+        registro.case_key = _normalizar_caso(case_id)
+        registro.sender = _texto(data.get("sender") or data.get("remitente")) or "Usuario"
+        registro.sender_email = _texto(data.get("senderEmail")).lower()
+        registro.role = _texto(data.get("role")) or "citizen"
+        registro.text = texto
+        registro.time = _texto(data.get("time")) or datetime.now(timezone.utc).strftime("%H:%M")
+        registro.date = _texto(data.get("date")) or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        registro.attachment = adjunto
+        db.session.commit()
+
+        return jsonify({
+            "success": True,
+            "message": "Mensaje persistido.",
+            "data": registro.to_dict()
+        }), 201
+
+    @app.errorhandler(413)
+    def _cuerpo_demasiado_grande(_error):
+        return jsonify({
+            "success": False,
+            "error": "payload_too_large",
+            "message": "La petición supera el límite de 15 MB. Comprime el archivo o usa /api/upload."
+        }), 413
 
     # --------------------------------------------------------------------------
     # RUTAS DE SERVIDO WEB ESTÁTICO (UI FRONTEND)

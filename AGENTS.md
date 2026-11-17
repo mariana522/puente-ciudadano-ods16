@@ -8,13 +8,13 @@ Spanish-language academic platform for ODS 16 (Colombian legal/social orientatio
 
 - **Node HTTP server — `server.js`, port 3001 (`npm start`)**
   Serves static files, Socket.io realtime chat, and REST: `/api/casos`, `/api/mensajes`, `/api/agenda`, `/api/upload`, `/api/attachments/:id`, `/api/daily_room`, `/uploads/*`, `/health`.
-  `/api/upload` usa Multer en memoria (10 MB) y `/api/attachments/:id` sirve el archivo desde un almacén acotado en memoria (TTL/cupo); los adjuntos no sobreviven un reinicio. `/uploads/*` queda sólo para archivos heredados en disco.
+  `/api/upload` usa Multer en memoria (15 MB) y `/api/attachments/:id` sirve el archivo desde un almacén acotado en memoria (TTL/cupo); los adjuntos no sobreviven un reinicio. `/uploads/*` queda sólo para archivos heredados en disco.
   Also **proxies `/api/rag/*` to the Flask service** (`RAG_SERVICE_URL`, default `http://127.0.0.1:5000`), so the browser always calls same-origin relative URLs.
   Persists to JSON files under `database/`: `messages_store.json`, `cases_store.json`, plus `agenda_store.json` / `rooms_store.json` at runtime.
 - **Flask RAG — `app.py`, port 5000 (`python app.py`)**
   Serves the same UI plus `/api/rag/*`: `estado`, `buscar`, `ingerir`, `orientar`, `peticion/pdf`, `consultas`.
   Uses `puente_rag.db` (SQLite) unless `DATABASE_URL` / MySQL is configured.
-  **En Render el entry point público es este Flask**, así que también expone `/health` y `/api/casos` (GET/POST/PUT, `action=claim`, `action=update`) sobre la tabla SQLAlchemy `casos` (`models.py`). Los expedientes viven en `puente_rag.db`/`DATABASE_URL`; sin base persistente se pierden al redesplegar (filesystem efímero de Render free). No hay Socket.IO: el frontend sincroniza por polling (`db.js`, ~4 s).
+  **En Render el entry point público es este Flask**, así que también expone `/health` y `/api/casos` (GET/POST/PUT, `action=claim`, `action=update`) sobre la tabla SQLAlchemy `casos` (`models.py`). Los expedientes viven en `puente_rag.db`/`DATABASE_URL`; sin base persistente se pierden al redesplegar (filesystem efímero de Render free). No hay Socket.IO: el frontend sincroniza por polling (`db.js`, ~4 s). El chat usa `/api/mensajes` (tabla `mensajes_chat`) y los adjuntos `/api/upload` + `/api/attachments/<id>` (límite 15 MB, almacén en memoria de 6 h).
 - **PHP API — `backend/` and `api/`**
   XAMPP/MySQL alternative consumed by `db.js`; the frontend silently falls back to `LocalStorage`/`PuenteDB` when PHP is unavailable.
 

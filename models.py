@@ -168,6 +168,47 @@ class Caso(db.Model):
         return f"<Caso id={self.id} status='{self.status}' assignedTo='{self.assigned_to}'>"
 
 
+class MensajeChat(db.Model):
+    """
+    Tabla: mensajes_chat
+    Mensajes del chat en tiempo real compartidos entre dispositivos cuando la
+    aplicación es servida por Flask (Render). El adjunto se guarda como JSON
+    ({id, url, originalname, mimetype, size, dataUrl?}) y el archivo binario vive
+    en el almacén acotado en memoria de app.py.
+    """
+    __tablename__ = 'mensajes_chat'
+
+    id = db.Column(db.String(80), primary_key=True)
+    case_id = db.Column(db.String(40), nullable=False, doc="Código original, ej. CAS-00138")
+    case_key = db.Column(db.String(40), nullable=False, index=True, doc="Código normalizado, ej. cas00138")
+    sender = db.Column(db.String(200), nullable=True)
+    sender_email = db.Column(db.String(200), nullable=True)
+    role = db.Column(db.String(30), nullable=True)
+    text = db.Column(db.Text, nullable=True)
+    time = db.Column(db.String(20), nullable=True)
+    date = db.Column(db.String(20), nullable=True)
+    attachment = db.Column(db.JSON, nullable=True)
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'caseId': self.case_id or 'CAS-00138',
+            'sender': self.sender or 'Usuario',
+            'senderEmail': self.sender_email or '',
+            'role': self.role or 'citizen',
+            'text': self.text or '',
+            'time': self.time or '',
+            'date': self.date or '',
+            'attachment': self.attachment or None,
+            'createdAt': self.created_at.isoformat() if self.created_at else None
+        }
+
+
 class ConsultaAgente(db.Model):
     """
     Tabla: consultas_agente

@@ -2131,17 +2131,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const formData = new FormData();
     formData.append('file', file, file.name);
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      body: formData,
-      cache: 'no-store'
-    });
+    let res;
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+        cache: 'no-store'
+      });
+    } catch (redErr) {
+      console.error('[Messenger] Error de red subiendo adjunto a ' + endpoint + ':', redErr);
+      throw new Error('Error de red: ' + (redErr.message || redErr));
+    }
 
+    const textoRespuesta = await res.text().catch(() => '');
     let json = null;
-    try { json = await res.json(); } catch (e) {}
+    try { json = textoRespuesta ? JSON.parse(textoRespuesta) : null; } catch (e) {}
 
     if (!res.ok || !json || !json.success) {
-      throw new Error((json && json.error) || ('HTTP ' + res.status));
+      const detalleServidor = (json && (json.error || json.message)) ||
+        (textoRespuesta ? textoRespuesta.slice(0, 300) : 'respuesta vacía');
+      console.error('[Messenger] Fallo al subir adjunto', {
+        endpoint: endpoint,
+        status: res.status,
+        detalle: detalleServidor,
+        respuesta: json || textoRespuesta.slice(0, 300)
+      });
+
+      const error = new Error(
+        res.status === 413
+          ? 'El archivo supera el límite de 15 MB del servidor.'
+          : 'HTTP ' + res.status + ': ' + detalleServidor
+      );
+      error.status = res.status;
+      throw error;
     }
 
     return {
@@ -2169,14 +2191,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const user = state.currentUser || { name: 'Mariana Sibaja', role: 'citizen', email: 'mariana.sibaja@ejemplo.com' };
     const caseId = state.activeMessengerCaseId || 'CAS-00138';
 
-    const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;   // límite del backend: 10 MB
-    const MAX_INLINE_BYTES = 2 * 1024 * 1024;   // fallback base64 sólo si es pequeño
+    const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;  // límite del backend: 15 MB
+    const MAX_INLINE_BYTES = 5 * 1024 * 1024;   // fallback base64 sólo si es pequeño
 
     // --- Adjunto: primero /api/upload en memoria; base64 sólo como respaldo ---
     let attachment = null;
     if (selectedFile) {
       if (selectedFile.size > MAX_UPLOAD_BYTES) {
-        showToast('El archivo supera el límite de 8 MB. Por favor comprime el documento.', 'error');
+        const pesaMb = (selectedFile.size / (1024 * 1024)).toFixed(1);
+        showToast(`El archivo pesa ${pesaMb} MB y supera el límite de 15 MB. Por favor comprime el documento.`, 'error');
         return;
       }
 
@@ -2185,8 +2208,8 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.warn('[Messenger] No se pudo subir a /api/upload, intentando respaldo base64:', err);
 
-        if (selectedFile.size > MAX_INLINE_BYTES) {
-          showToast('No se pudo subir el archivo. Verifica la conexión.', 'error');
+        if (selectedFile.size > MAX_INLINE_BYTES || err.status === 413 || err.status === 415) {
+          showToast('No se pudo subir el archivo: ' + (err.message || 'error de conexión'), 'error');
           return;
         }
 
@@ -2200,7 +2223,7 @@ document.addEventListener('DOMContentLoaded', () => {
           };
         } catch (err2) {
           console.error('[Messenger] Error leyendo archivo:', err2);
-          showToast('No se pudo subir el archivo. Verifica la conexión.', 'error');
+          showToast('No se pudo subir el archivo: ' + (err2.message || 'error leyendo el archivo'), 'error');
           return;
         }
       }

@@ -34,8 +34,8 @@ if (!fs.existsSync(UPLOADS_DIR)) {
   try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
 }
 
-const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB por archivo
-const MAX_JSON_BODY_BYTES = 8 * 1024 * 1024; // 8 MB para /api/mensajes
+const MAX_UPLOAD_BYTES = 15 * 1024 * 1024; // 15 MB por archivo
+const MAX_JSON_BODY_BYTES = 15 * 1024 * 1024; // 15 MB para /api/mensajes
 const DATA_URL_MAX_BYTES = 512 * 1024; // base64 inline sólo para vistas previas
 const ATTACHMENTS_MAX_TOTAL_BYTES = 64 * 1024 * 1024; // 64 MB en memoria
 const ATTACHMENTS_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
@@ -1188,7 +1188,7 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({
           success: false,
           error: esTamano
-            ? 'El archivo supera el límite de 10 MB.'
+            ? 'El archivo supera el límite de ' + Math.round(MAX_UPLOAD_BYTES / (1024 * 1024)) + ' MB.'
             : (err.message || 'Error al procesar el archivo adjunto.')
         }));
         return;
@@ -1326,7 +1326,7 @@ const io = new Server(server, {
   pingTimeout: 30000,
   pingInterval: 25000,
   // Permite mensajes con Data URL de respaldo (el flujo normal usa /api/upload).
-  maxHttpBufferSize: 16 * 1024 * 1024
+  maxHttpBufferSize: 15 * 1024 * 1024
 });
 
 io.on('connection', (socket) => {
